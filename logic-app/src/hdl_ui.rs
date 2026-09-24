@@ -1,5 +1,5 @@
 use crate::theme::Theme;
-use eframe::egui::{self, Frame, RichText};
+use eframe::egui::{self, RichText};
 use logic_core::{Circuit, HdlExporter};
 use std::fs;
 
@@ -49,11 +49,7 @@ impl HdlUiState {
         }
 
         let mut is_open_local = self.is_open;
-        let modal_frame = Frame::new()
-            .fill(Theme::BG_PANEL_RAISED)
-            .stroke(egui::Stroke::new(1.0, Theme::ACCENT_PURPLE))
-            .corner_radius(8.0)
-            .inner_margin(16.0);
+        let modal_frame = Theme::glass_modal();
 
         egui::Window::new("Export Hardware Description (HDL)")
             .open(&mut is_open_local)

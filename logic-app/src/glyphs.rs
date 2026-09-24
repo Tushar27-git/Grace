@@ -1,4 +1,4 @@
-use crate::theme::Theme;
+use crate::theme::{Theme, ThemeMode};
 use eframe::egui::{Color32, CornerRadius, Painter, Pos2, Rect, Stroke, Vec2};
 use logic_core::{ComponentNode, GateKind, Signal};
 
@@ -12,6 +12,7 @@ impl GlyphRenderer {
         is_hovered: bool,
         to_screen: impl Fn(Pos2) -> Pos2,
         zoom: f32,
+        theme_mode: ThemeMode,
     ) {
         let center_canvas = Pos2::new(comp.pos.0, comp.pos.1);
         let rotation = comp.rotation;
@@ -29,105 +30,238 @@ impl GlyphRenderer {
         } else if is_hovered {
             Theme::ACCENT_PINK.gamma_multiply(0.8)
         } else {
-            Theme::ACCENT_PURPLE
+            theme_mode.gate_stroke()
         };
-        let stroke_width = if is_selected { 2.0 * zoom } else { 1.2 * zoom };
+        let stroke_width = if is_selected { 2.0 * zoom } else { 1.3 * zoom };
         let body_stroke = Stroke::new(stroke_width, stroke_color);
-        let body_fill = Theme::BG_PANEL_RAISED;
+        let body_fill = theme_mode.gate_fill();
 
-        // 1. Draw input/output pin stubs
+        // 1. Draw input pin stubs
         let in_count = comp.input_signals.len();
         let (hw, _) = comp.half_dimensions();
         for i in 0..in_count {
             let port_offset = comp.port_offset_unrotated(false, i);
+            let y = port_offset.1;
             let body_edge_x = match comp.kind {
                 GateKind::And | GateKind::Nand => -25.0,
-                GateKind::Or | GateKind::Nor | GateKind::Xor | GateKind::Xnor => -20.0,
-                GateKind::Not => -25.0,
+                GateKind::Or | GateKind::Nor => {
+                    let s = (y / 20.0).clamp(-1.0, 1.0);
+                    -25.0 + 12.0 * (1.0 - s * s)
+                }
+                GateKind::Xor | GateKind::Xnor => {
+                    let s = (y / 20.0).clamp(-1.0, 1.0);
+                    -32.0 + 12.0 * (1.0 - s * s)
+                }
+                GateKind::Not => -20.0,
                 GateKind::Led => -18.0,
                 GateKind::ToggleSwitch | GateKind::Clock => -20.0,
                 _ => -hw,
             };
 
-            let p_pin = local_to_screen(port_offset.0, port_offset.1);
-            let p_body = local_to_screen(body_edge_x, port_offset.1);
+            let p_pin = local_to_screen(port_offset.0, y);
+            let p_body = local_to_screen(body_edge_x, y);
 
             let sig = comp.input_signals.get(i).copied().unwrap_or(Signal::Zero);
             let pin_color = Self::signal_color(sig);
 
             painter.line_segment([p_pin, p_body], Stroke::new(1.5 * zoom, pin_color));
-            Self::draw_pin_dot(painter, p_pin, sig, zoom);
+            Self::draw_pin_dot(painter, p_pin, sig, zoom, theme_mode);
         }
 
+        // 2. Draw output pin stubs
         let out_count = comp.output_signals.len();
         for i in 0..out_count {
             let port_offset = comp.port_offset_unrotated(true, i);
+            let y = port_offset.1;
             let body_edge_x = match comp.kind {
-                GateKind::Not | GateKind::Nand | GateKind::Nor | GateKind::Xnor => 28.5,
-                GateKind::And | GateKind::Or | GateKind::Xor => 25.0,
+                GateKind::Not => 25.0, // right edge of bubble at center 21.5 + radius 3.5
+                GateKind::Nand | GateKind::Nor | GateKind::Xnor => 32.0, // right edge of bubble at center 28.5 + radius 3.5
+                GateKind::And | GateKind::Or | GateKind::Xor => 25.0,    // nose tip of gate
                 GateKind::ToggleSwitch | GateKind::Clock => 20.0,
                 _ => hw,
             };
 
-            let p_pin = local_to_screen(port_offset.0, port_offset.1);
-            let p_body = local_to_screen(body_edge_x, port_offset.1);
+            let p_pin = local_to_screen(port_offset.0, y);
+            let p_body = local_to_screen(body_edge_x, y);
 
             let sig = comp.output_signals.get(i).copied().unwrap_or(Signal::Zero);
             let pin_color = Self::signal_color(sig);
 
             painter.line_segment([p_body, p_pin], Stroke::new(1.5 * zoom, pin_color));
-            Self::draw_pin_dot(painter, p_pin, sig, zoom);
+            Self::draw_pin_dot(painter, p_pin, sig, zoom, theme_mode);
         }
 
-        // 2. Draw gate/block body symbol
+        // 3. Draw gate/block body symbol with crisp function name labels
         match &comp.kind {
             GateKind::And => {
                 Self::draw_and_shape(painter, &local_to_screen, body_fill, body_stroke);
+                painter.text(
+                    local_to_screen(-5.0, 0.0),
+                    egui::Align2::CENTER_CENTER,
+                    "AND",
+                    egui::FontId::monospace(10.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::TEXT_PRIMARY,
+                );
             }
             GateKind::Nand => {
                 Self::draw_and_shape(painter, &local_to_screen, body_fill, body_stroke);
-                Self::draw_bubble(painter, local_to_screen(25.0, 0.0), body_stroke, zoom);
+                Self::draw_bubble(
+                    painter,
+                    local_to_screen(28.5, 0.0),
+                    body_stroke,
+                    zoom,
+                    theme_mode.bubble_fill(),
+                );
+                painter.text(
+                    local_to_screen(-5.0, 0.0),
+                    egui::Align2::CENTER_CENTER,
+                    "NAND",
+                    egui::FontId::monospace(9.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::TEXT_PRIMARY,
+                );
             }
             GateKind::Or => {
                 Self::draw_or_shape(painter, &local_to_screen, body_fill, body_stroke);
+                painter.text(
+                    local_to_screen(2.0, 0.0),
+                    egui::Align2::CENTER_CENTER,
+                    "OR",
+                    egui::FontId::monospace(10.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::TEXT_PRIMARY,
+                );
             }
             GateKind::Nor => {
                 Self::draw_or_shape(painter, &local_to_screen, body_fill, body_stroke);
-                Self::draw_bubble(painter, local_to_screen(25.0, 0.0), body_stroke, zoom);
+                Self::draw_bubble(
+                    painter,
+                    local_to_screen(28.5, 0.0),
+                    body_stroke,
+                    zoom,
+                    theme_mode.bubble_fill(),
+                );
+                painter.text(
+                    local_to_screen(2.0, 0.0),
+                    egui::Align2::CENTER_CENTER,
+                    "NOR",
+                    egui::FontId::monospace(9.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::TEXT_PRIMARY,
+                );
             }
             GateKind::Xor => {
                 Self::draw_xor_shape(painter, &local_to_screen, body_fill, body_stroke);
+                painter.text(
+                    local_to_screen(2.0, 0.0),
+                    egui::Align2::CENTER_CENTER,
+                    "XOR",
+                    egui::FontId::monospace(10.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::TEXT_PRIMARY,
+                );
             }
             GateKind::Xnor => {
                 Self::draw_xor_shape(painter, &local_to_screen, body_fill, body_stroke);
-                Self::draw_bubble(painter, local_to_screen(25.0, 0.0), body_stroke, zoom);
+                Self::draw_bubble(
+                    painter,
+                    local_to_screen(28.5, 0.0),
+                    body_stroke,
+                    zoom,
+                    theme_mode.bubble_fill(),
+                );
+                painter.text(
+                    local_to_screen(2.0, 0.0),
+                    egui::Align2::CENTER_CENTER,
+                    "XNOR",
+                    egui::FontId::monospace(9.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::TEXT_PRIMARY,
+                );
             }
             GateKind::Not => {
                 Self::draw_not_shape(painter, &local_to_screen, body_fill, body_stroke);
-                Self::draw_bubble(painter, local_to_screen(22.0, 0.0), body_stroke, zoom);
+                Self::draw_bubble(
+                    painter,
+                    local_to_screen(21.5, 0.0),
+                    body_stroke,
+                    zoom,
+                    theme_mode.bubble_fill(),
+                );
+                painter.text(
+                    local_to_screen(-5.0, 0.0),
+                    egui::Align2::CENTER_CENTER,
+                    "NOT",
+                    egui::FontId::monospace(9.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::TEXT_PRIMARY,
+                );
             }
             GateKind::ToggleSwitch => {
-                Self::draw_toggle_switch(painter, &local_to_screen, comp, body_stroke, zoom);
+                Self::draw_toggle_switch(
+                    painter,
+                    &local_to_screen,
+                    comp,
+                    body_stroke,
+                    zoom,
+                    theme_mode,
+                );
             }
             GateKind::Led => {
-                Self::draw_led(painter, &local_to_screen, comp, body_stroke, zoom);
+                Self::draw_led(
+                    painter,
+                    &local_to_screen,
+                    comp,
+                    body_stroke,
+                    zoom,
+                    theme_mode,
+                );
             }
             GateKind::Clock => {
-                Self::draw_clock(painter, &local_to_screen, comp, body_stroke, zoom);
+                Self::draw_clock(
+                    painter,
+                    &local_to_screen,
+                    comp,
+                    body_stroke,
+                    zoom,
+                    theme_mode,
+                );
             }
             GateKind::BinaryDisplay4 => {
-                Self::draw_binary_display(painter, &local_to_screen, comp, body_stroke, zoom);
+                Self::draw_binary_display(
+                    painter,
+                    &local_to_screen,
+                    comp,
+                    body_stroke,
+                    zoom,
+                    theme_mode,
+                );
             }
             GateKind::HexDisplay => {
-                Self::draw_hex_display(painter, &local_to_screen, comp, body_stroke, zoom);
+                Self::draw_hex_display(
+                    painter,
+                    &local_to_screen,
+                    comp,
+                    body_stroke,
+                    zoom,
+                    theme_mode,
+                );
             }
             GateKind::SevenSegment => {
-                Self::draw_seven_segment(painter, &local_to_screen, comp, body_stroke, zoom);
+                Self::draw_seven_segment(
+                    painter,
+                    &local_to_screen,
+                    comp,
+                    body_stroke,
+                    zoom,
+                    theme_mode,
+                );
             }
             _ => {
-                // Generic IC Chip Block with notch, pin labels, and short code
                 let title = comp.kind.short_code();
-                Self::draw_chip_block(painter, &local_to_screen, comp, &title, body_stroke, zoom);
+                Self::draw_chip_block(
+                    painter,
+                    &local_to_screen,
+                    comp,
+                    &title,
+                    body_stroke,
+                    zoom,
+                    theme_mode,
+                );
             }
         }
     }
@@ -141,12 +275,12 @@ impl GlyphRenderer {
         }
     }
 
-    fn draw_pin_dot(painter: &Painter, pos: Pos2, sig: Signal, zoom: f32) {
+    fn draw_pin_dot(painter: &Painter, pos: Pos2, sig: Signal, zoom: f32, theme_mode: ThemeMode) {
         let radius = 3.0 * zoom;
         match sig {
             Signal::Zero => {
                 painter.circle_filled(pos, radius, Theme::SIGNAL_LOW);
-                painter.circle_stroke(pos, radius, Stroke::new(1.0 * zoom, Theme::BG_PANEL));
+                painter.circle_stroke(pos, radius, Stroke::new(1.0 * zoom, theme_mode.bg_canvas()));
             }
             Signal::One => {
                 painter.circle_filled(pos, radius, Theme::SIGNAL_HIGH);
@@ -165,9 +299,15 @@ impl GlyphRenderer {
         }
     }
 
-    fn draw_bubble(painter: &Painter, center: Pos2, stroke: Stroke, zoom: f32) {
+    fn draw_bubble(
+        painter: &Painter,
+        center: Pos2,
+        stroke: Stroke,
+        zoom: f32,
+        bubble_fill: Color32,
+    ) {
         let radius = 3.5 * zoom;
-        painter.circle(center, radius, Theme::BG_PANEL_RAISED, stroke);
+        painter.circle(center, radius, bubble_fill, stroke);
     }
 
     fn draw_and_shape(
@@ -176,12 +316,12 @@ impl GlyphRenderer {
         fill: Color32,
         stroke: Stroke,
     ) {
-        let mut pts = Vec::with_capacity(20);
+        let mut pts = Vec::with_capacity(22);
         pts.push(local_to_screen(-25.0, -20.0));
         pts.push(local_to_screen(0.0, -20.0));
 
-        let segments = 12;
-        for i in 0..=segments {
+        let segments = 16;
+        for i in 1..segments {
             let t =
                 -std::f32::consts::FRAC_PI_2 + (i as f32 / segments as f32) * std::f32::consts::PI;
             let x = 25.0 * t.cos();
@@ -189,8 +329,8 @@ impl GlyphRenderer {
             pts.push(local_to_screen(x, y));
         }
 
+        pts.push(local_to_screen(0.0, 20.0));
         pts.push(local_to_screen(-25.0, 20.0));
-        pts.push(local_to_screen(-25.0, -20.0));
 
         painter.add(egui::epaint::PathShape::convex_polygon(pts, fill, stroke));
     }
@@ -201,31 +341,64 @@ impl GlyphRenderer {
         fill: Color32,
         stroke: Stroke,
     ) {
-        let mut pts = Vec::with_capacity(30);
+        let segments = 24;
 
-        let segments = 12;
+        // 1. Construct the exact perimeter points in continuous counter-clockwise order
+        let mut perimeter = Vec::with_capacity(segments * 3 + 2);
+
+        // Top curve from (-25.0, -20.0) to (25.0, 0.0)
         for i in 0..=segments {
-            let u = i as f32 / segments as f32;
-            let x = -25.0 + 50.0 * u;
-            let y = -20.0 * (1.0 - u * u);
-            pts.push(local_to_screen(x, y));
+            let t = i as f32 / segments as f32;
+            let x = -25.0 + 50.0 * t;
+            let y = -20.0 * (1.0 - t * t);
+            perimeter.push(local_to_screen(x, y));
         }
 
-        for i in 0..=segments {
-            let u = i as f32 / segments as f32;
-            let x = 25.0 - 50.0 * u;
-            let y = 20.0 * (2.0 * u - u * u);
-            pts.push(local_to_screen(x, y));
+        // Bottom curve from (25.0, 0.0) to (-25.0, 20.0)
+        for i in 1..=segments {
+            let t = i as f32 / segments as f32;
+            let x = 25.0 - 50.0 * t;
+            let y = 20.0 * (1.0 - (1.0 - t) * (1.0 - t));
+            perimeter.push(local_to_screen(x, y));
         }
 
-        for i in 0..=segments {
-            let u = i as f32 / segments as f32;
-            let y = 20.0 - 40.0 * u;
-            let x = -25.0 + 10.0 * (1.0 - (y / 20.0).powi(2));
-            pts.push(local_to_screen(x, y));
+        // Back concave curve from (-25.0, 20.0) inward to (-13.0, 0.0) and to (-25.0, -20.0)
+        for i in 1..segments {
+            let t = i as f32 / segments as f32;
+            let y = 20.0 - 40.0 * t;
+            let s = y / 20.0;
+            let x = -25.0 + 12.0 * (1.0 - s * s);
+            perimeter.push(local_to_screen(x, y));
         }
 
-        painter.add(egui::epaint::PathShape::convex_polygon(pts, fill, stroke));
+        // 2. Fill the interior using an indexed triangle fan from internal star-center (5.0, 0.0)
+        let mut mesh = egui::Mesh::default();
+        let center = local_to_screen(5.0, 0.0);
+        let c_idx = 0u32;
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: center,
+            uv: egui::epaint::WHITE_UV,
+            color: fill,
+        });
+
+        for pt in &perimeter {
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: *pt,
+                uv: egui::epaint::WHITE_UV,
+                color: fill,
+            });
+        }
+
+        let n = perimeter.len() as u32;
+        for i in 0..n {
+            let next = (i + 1) % n;
+            mesh.add_triangle(c_idx, 1 + i, 1 + next);
+        }
+
+        painter.add(mesh);
+
+        // 3. Draw the stroke outline around the exact same perimeter
+        painter.add(egui::epaint::PathShape::closed_line(perimeter, stroke));
     }
 
     fn draw_xor_shape(
@@ -236,17 +409,17 @@ impl GlyphRenderer {
     ) {
         Self::draw_or_shape(painter, local_to_screen, fill, stroke);
 
-        let segments = 12;
-        let mut extra_line = Vec::with_capacity(segments + 1);
+        // Draw parallel outer input arc
+        let segments = 24;
+        let mut arc_pts = Vec::with_capacity(segments + 1);
         for i in 0..=segments {
-            let u = i as f32 / segments as f32;
-            let y = -20.0 + 40.0 * u;
-            let x = -30.0 + 10.0 * (1.0 - (y / 20.0).powi(2));
-            extra_line.push(local_to_screen(x, y));
+            let t = i as f32 / segments as f32;
+            let y = -20.0 + 40.0 * t;
+            let s = y / 20.0;
+            let x = -32.0 + 12.0 * (1.0 - s * s);
+            arc_pts.push(local_to_screen(x, y));
         }
-        for w in extra_line.windows(2) {
-            painter.line_segment([w[0], w[1]], stroke);
-        }
+        painter.add(egui::epaint::PathShape::line(arc_pts, stroke));
     }
 
     fn draw_not_shape(
@@ -256,9 +429,9 @@ impl GlyphRenderer {
         stroke: Stroke,
     ) {
         let pts = vec![
-            local_to_screen(-25.0, -18.0),
+            local_to_screen(-20.0, -18.0),
             local_to_screen(18.0, 0.0),
-            local_to_screen(-25.0, 18.0),
+            local_to_screen(-20.0, 18.0),
         ];
         painter.add(egui::epaint::PathShape::convex_polygon(pts, fill, stroke));
     }
@@ -269,6 +442,7 @@ impl GlyphRenderer {
         comp: &ComponentNode,
         stroke: Stroke,
         zoom: f32,
+        theme_mode: ThemeMode,
     ) {
         let tl = local_to_screen(-20.0, -15.0);
         let br = local_to_screen(20.0, 15.0);
@@ -281,32 +455,84 @@ impl GlyphRenderer {
         painter.rect(
             rect,
             CornerRadius::same(4),
-            Theme::BG_PANEL_RAISED,
+            theme_mode.gate_fill(),
             stroke,
             egui::StrokeKind::Inside,
         );
 
         let is_on = comp.state_flag;
-        let track_color = if is_on {
-            Theme::ACCENT_PURPLE
-        } else {
-            Theme::BG_PANEL
-        };
-        let track_rect = Rect::from_center_size(rect.center(), Vec2::new(26.0 * zoom, 14.0 * zoom));
-        painter.rect_filled(track_rect, CornerRadius::same(7), track_color);
 
-        let knob_x = if is_on {
-            track_rect.center().x + 6.0 * zoom
+        // Recessed cavity
+        let slot_w = 26.0 * zoom;
+        let slot_h = 14.0 * zoom;
+        let slot_rect = Rect::from_center_size(rect.center(), Vec2::new(slot_w, slot_h));
+        painter.rect_filled(
+            slot_rect,
+            CornerRadius::same(7),
+            Color32::from_rgb(0x0C, 0x0A, 0x0E),
+        );
+        painter.rect_stroke(
+            slot_rect,
+            CornerRadius::same(7),
+            Stroke::new(1.0 * zoom, Color32::from_rgb(0x28, 0x22, 0x30)),
+            egui::StrokeKind::Inside,
+        );
+
+        // Status LED indicator dot
+        let dot_pos = Pos2::new(rect.max.x - 5.0 * zoom, rect.min.y + 5.0 * zoom);
+        if is_on {
+            painter.circle_filled(dot_pos, 3.0 * zoom, Theme::ACCENT_PINK.gamma_multiply(0.4));
+            painter.circle_filled(dot_pos, 1.8 * zoom, Theme::ACCENT_PINK);
         } else {
-            track_rect.center().x - 6.0 * zoom
+            painter.circle_filled(dot_pos, 1.8 * zoom, Theme::SIGNAL_LOW);
+        }
+
+        // Mechanical toggle lever arm
+        let knob_x = if is_on {
+            slot_rect.center().x + 6.0 * zoom
+        } else {
+            slot_rect.center().x - 6.0 * zoom
         };
-        let knob_center = Pos2::new(knob_x, track_rect.center().y);
-        let knob_color = if is_on {
+        let knob_center = Pos2::new(knob_x, slot_rect.center().y);
+        let lever_base = slot_rect.center();
+        painter.line_segment(
+            [lever_base, knob_center],
+            Stroke::new(
+                3.0 * zoom,
+                if is_on {
+                    Theme::ACCENT_PINK.gamma_multiply(0.6)
+                } else {
+                    Color32::from_rgb(0x5A, 0x52, 0x64)
+                },
+            ),
+        );
+
+        // Metallic toggle knob head
+        let knob_r = 5.2 * zoom;
+        let knob_fill = if is_on {
             Theme::ACCENT_PINK
         } else {
-            Theme::TEXT_PRIMARY
+            Color32::from_rgb(0xD0, 0xCA, 0xD8)
         };
-        painter.circle_filled(knob_center, 5.0 * zoom, knob_color);
+        painter.circle_filled(knob_center, knob_r, knob_fill);
+        painter.circle_stroke(
+            knob_center,
+            knob_r,
+            Stroke::new(
+                1.0 * zoom,
+                if is_on {
+                    Color32::WHITE
+                } else {
+                    Color32::from_rgb(0x8C, 0x82, 0x98)
+                },
+            ),
+        );
+        // Reflection highlight
+        painter.circle_filled(
+            Pos2::new(knob_center.x - 1.5 * zoom, knob_center.y - 1.5 * zoom),
+            1.5 * zoom,
+            Color32::WHITE.gamma_multiply(0.8),
+        );
     }
 
     fn draw_led(
@@ -315,6 +541,7 @@ impl GlyphRenderer {
         comp: &ComponentNode,
         stroke: Stroke,
         zoom: f32,
+        theme_mode: ThemeMode,
     ) {
         let tl = local_to_screen(-18.0, -18.0);
         let br = local_to_screen(18.0, 18.0);
@@ -327,7 +554,7 @@ impl GlyphRenderer {
         painter.rect(
             rect,
             CornerRadius::same(6),
-            Theme::BG_PANEL_RAISED,
+            theme_mode.gate_fill(),
             stroke,
             egui::StrokeKind::Inside,
         );
@@ -358,7 +585,7 @@ impl GlyphRenderer {
         painter.circle_stroke(
             lamp_center,
             lamp_radius,
-            Stroke::new(1.0 * zoom, Theme::BG_PANEL),
+            Stroke::new(1.0 * zoom, Color32::from_rgb(0x30, 0x2A, 0x38)),
         );
     }
 
@@ -368,6 +595,7 @@ impl GlyphRenderer {
         comp: &ComponentNode,
         stroke: Stroke,
         zoom: f32,
+        theme_mode: ThemeMode,
     ) {
         let tl = local_to_screen(-20.0, -15.0);
         let br = local_to_screen(20.0, 15.0);
@@ -380,7 +608,7 @@ impl GlyphRenderer {
         painter.rect(
             rect,
             CornerRadius::same(4),
-            Theme::BG_PANEL_RAISED,
+            theme_mode.gate_fill(),
             stroke,
             egui::StrokeKind::Inside,
         );
@@ -418,6 +646,7 @@ impl GlyphRenderer {
         comp: &ComponentNode,
         stroke: Stroke,
         zoom: f32,
+        theme_mode: ThemeMode,
     ) {
         let (hw, hh) = comp.half_dimensions();
         let tl = local_to_screen(-hw, -hh);
@@ -430,7 +659,7 @@ impl GlyphRenderer {
         painter.rect(
             rect,
             CornerRadius::same(6),
-            Theme::BG_PANEL_RAISED,
+            theme_mode.gate_fill(),
             stroke,
             egui::StrokeKind::Inside,
         );
@@ -460,6 +689,7 @@ impl GlyphRenderer {
         comp: &ComponentNode,
         stroke: Stroke,
         zoom: f32,
+        theme_mode: ThemeMode,
     ) {
         let (hw, hh) = comp.half_dimensions();
         let tl = local_to_screen(-hw, -hh);
@@ -472,7 +702,7 @@ impl GlyphRenderer {
         painter.rect(
             rect,
             CornerRadius::same(6),
-            Theme::BG_PANEL_RAISED,
+            theme_mode.gate_fill(),
             stroke,
             egui::StrokeKind::Inside,
         );
@@ -506,6 +736,7 @@ impl GlyphRenderer {
         comp: &ComponentNode,
         stroke: Stroke,
         zoom: f32,
+        theme_mode: ThemeMode,
     ) {
         let (hw, hh) = comp.half_dimensions();
         let tl = local_to_screen(-hw, -hh);
@@ -518,7 +749,7 @@ impl GlyphRenderer {
         painter.rect(
             rect,
             CornerRadius::same(6),
-            Theme::BG_PANEL_RAISED,
+            theme_mode.gate_fill(),
             stroke,
             egui::StrokeKind::Inside,
         );
@@ -607,6 +838,7 @@ impl GlyphRenderer {
         title: &str,
         stroke: Stroke,
         zoom: f32,
+        theme_mode: ThemeMode,
     ) {
         let (hw, hh) = comp.half_dimensions();
         let tl = local_to_screen(-hw, -hh);
@@ -619,14 +851,14 @@ impl GlyphRenderer {
         painter.rect(
             rect,
             CornerRadius::same(6),
-            Theme::BG_PANEL_RAISED,
+            theme_mode.gate_fill(),
             stroke,
             egui::StrokeKind::Inside,
         );
 
         // Top orientation notch
         let notch_pos = Pos2::new(rect.center().x, rect.min.y);
-        painter.circle_filled(notch_pos, 3.5 * zoom, Theme::BG_PANEL);
+        painter.circle_filled(notch_pos, 3.5 * zoom, theme_mode.bg_canvas());
 
         // Chip title
         painter.text(

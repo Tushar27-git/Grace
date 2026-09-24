@@ -117,7 +117,10 @@ impl ComponentNode {
         };
 
         let x_pos = if is_output {
-            half_w + 10.0
+            match self.kind {
+                GateKind::Nand | GateKind::Nor | GateKind::Xnor => half_w + 17.0,
+                _ => half_w + 10.0,
+            }
         } else {
             -half_w - 10.0
         };

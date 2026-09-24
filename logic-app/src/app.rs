@@ -1,7 +1,7 @@
 use crate::canvas::CanvasState;
 use crate::hdl_ui::HdlUiState;
 use crate::palette::Palette;
-use crate::theme::{Theme, apply_theme};
+use crate::theme::{Theme, ThemeMode, apply_theme};
 use crate::verification_ui::{UniversalChallenge, VerificationUiState};
 use crate::waveform::WaveformState;
 use eframe::egui::{self, CentralPanel, Frame, Key, Panel, RichText, Ui};
@@ -25,6 +25,7 @@ pub struct LogicLabApp {
     pub new_subcircuit_name: String,
     pub waveform: WaveformState,
     pub hdl_ui: HdlUiState,
+    pub theme_mode: ThemeMode,
 }
 
 impl LogicLabApp {
@@ -47,6 +48,7 @@ impl LogicLabApp {
             new_subcircuit_name: String::new(),
             waveform: WaveformState::default(),
             hdl_ui: HdlUiState::default(),
+            theme_mode: ThemeMode::Light,
         }
     }
 
@@ -458,161 +460,277 @@ impl eframe::App for LogicLabApp {
                 self.delete_selected();
             } else if i.key_pressed(Key::R) {
                 self.rotate_selected();
+            } else if i.key_pressed(Key::F8) || (ctrl && i.key_pressed(Key::T)) {
+                self.theme_mode.toggle();
             }
         });
 
-        // 1. Top Toolbar Panel
-        let top_frame = Frame::side_top_panel(ui.style()).fill(Theme::BG_PANEL);
+        // 1. Top Menu & Navigation Bar
+        let top_frame = Theme::glass_panel();
         Panel::top("top_toolbar").frame(top_frame).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.visuals_mut().override_text_color = Some(Theme::ACCENT_PINK);
-                ui.heading("LOGIC LAB");
-                ui.visuals_mut().override_text_color = Some(Theme::TEXT_PRIMARY);
+                ui.label(
+                    RichText::new("Logic Lab")
+                        .size(15.0)
+                        .strong()
+                        .color(Theme::ACCENT_PINK),
+                );
 
                 ui.separator();
 
-                // History buttons
-                if ui.button("⟲ Undo").clicked() {
-                    self.undo();
-                }
-                if ui.button("⟳ Redo").clicked() {
-                    self.redo();
-                }
+                // File Menu
+                ui.menu_button("File", |ui| {
+                    if ui.button("Save Circuit... (Ctrl+S)").clicked() {
+                        ui.close();
+                        self.save_to_file();
+                    }
+                    if ui.button("Load Circuit... (Ctrl+O)").clicked() {
+                        ui.close();
+                        self.load_from_file();
+                    }
+                    ui.separator();
+                    if ui.button("Export HDL (Verilog / VHDL)...").clicked() {
+                        ui.close();
+                        self.hdl_ui.open(&self.circuit);
+                    }
+                    ui.separator();
+                    if ui
+                        .button(RichText::new("Clear Canvas").color(Theme::ACCENT_RED))
+                        .clicked()
+                    {
+                        ui.close();
+                        self.clear_circuit();
+                    }
+                });
 
-                ui.separator();
+                // Edit Menu
+                ui.menu_button("Edit", |ui| {
+                    let can_undo = !self.undo_stack.is_empty();
+                    if ui
+                        .add_enabled(can_undo, egui::Button::new("Undo (Ctrl+Z)"))
+                        .clicked()
+                    {
+                        ui.close();
+                        self.undo();
+                    }
+                    let can_redo = !self.redo_stack.is_empty();
+                    if ui
+                        .add_enabled(can_redo, egui::Button::new("Redo (Ctrl+Y)"))
+                        .clicked()
+                    {
+                        ui.close();
+                        self.redo();
+                    }
+                    ui.separator();
+                    let has_sel = !self.canvas.selection.is_empty();
+                    if ui
+                        .add_enabled(has_sel, egui::Button::new("Rotate Selection (R)"))
+                        .clicked()
+                    {
+                        ui.close();
+                        self.rotate_selected();
+                    }
+                    if ui
+                        .add_enabled(has_sel, egui::Button::new("Duplicate Selection (Ctrl+D)"))
+                        .clicked()
+                    {
+                        ui.close();
+                        self.duplicate_selected();
+                    }
+                    if ui
+                        .add_enabled(
+                            has_sel,
+                            egui::Button::new(
+                                RichText::new("Delete Selection (Del)").color(Theme::ACCENT_RED),
+                            ),
+                        )
+                        .clicked()
+                    {
+                        ui.close();
+                        self.delete_selected();
+                    }
+                    ui.separator();
+                    if ui
+                        .add_enabled(
+                            has_sel,
+                            egui::Button::new(
+                                RichText::new("Package Subcircuit (Ctrl+G)")
+                                    .color(Theme::ACCENT_PINK),
+                            ),
+                        )
+                        .clicked()
+                    {
+                        ui.close();
+                        self.new_subcircuit_name =
+                            format!("IC_{}", self.circuit.subcircuits.len() + 1);
+                        self.subcircuit_modal_open = true;
+                    }
+                });
 
-                // Component editing buttons
-                if ui.button("Rotate (R)").clicked() {
-                    self.rotate_selected();
-                }
-                if ui.button("Duplicate (Ctrl+D)").clicked() {
-                    self.duplicate_selected();
-                }
-                if ui
-                    .button(RichText::new("Delete (Del)").color(Theme::ACCENT_RED))
-                    .clicked()
-                {
-                    self.delete_selected();
-                }
+                // View Menu
+                ui.menu_button("View", |ui| {
+                    let theme_lbl = if self.theme_mode.is_dark() {
+                        "Switch to Light Mode (Ctrl+T / F8)"
+                    } else {
+                        "Switch to Dark Mode (Ctrl+T / F8)"
+                    };
+                    if ui.button(theme_lbl).clicked() {
+                        self.theme_mode.toggle();
+                    }
+                    ui.separator();
+                    let grid_lbl = if self.canvas.show_grid {
+                        "Grid: Hide"
+                    } else {
+                        "Grid: Show"
+                    };
+                    if ui.button(grid_lbl).clicked() {
+                        self.canvas.show_grid = !self.canvas.show_grid;
+                    }
+                    let snap_lbl = if self.canvas.snap_to_grid {
+                        "Snap: Disable"
+                    } else {
+                        "Snap: Enable"
+                    };
+                    if ui.button(snap_lbl).clicked() {
+                        self.canvas.snap_to_grid = !self.canvas.snap_to_grid;
+                    }
+                    ui.separator();
+                    if ui.button("Reset Zoom (100%)").clicked() {
+                        self.canvas.zoom = 1.0;
+                    }
+                    if ui.button("Center Viewport").clicked() {
+                        self.canvas.pan = egui::Vec2::new(300.0, 200.0);
+                    }
+                });
 
-                ui.separator();
+                // Simulation Menu
+                ui.menu_button("Simulation", |ui| {
+                    let clock_btn_text = if self.clock_running {
+                        "Pause Clock"
+                    } else {
+                        "Run Clock (2Hz)"
+                    };
+                    if ui.button(clock_btn_text).clicked() {
+                        self.clock_running = !self.clock_running;
+                    }
+                    if ui.button("Step Tick Clock").clicked() {
+                        Simulator::tick(&mut self.circuit, ClockEdge::Rising);
+                        self.waveform.sample_circuit(&self.circuit);
+                        self.status_message = "Clock ticked".to_string();
+                    }
+                    ui.separator();
+                    if ui.button("Settle Circuit Signals").clicked() {
+                        Simulator::settle(&mut self.circuit);
+                        self.status_message = "Circuit settled".to_string();
+                    }
+                });
 
-                // Grid & Snap toggles
-                let grid_text = if self.canvas.show_grid {
-                    "Grid: ON"
-                } else {
-                    "Grid: OFF"
-                };
-                if ui.button(grid_text).clicked() {
-                    self.canvas.show_grid = !self.canvas.show_grid;
-                }
-
-                let snap_text = if self.canvas.snap_to_grid {
-                    "Snap: ON"
-                } else {
-                    "Snap: OFF"
-                };
-                if ui.button(snap_text).clicked() {
-                    self.canvas.snap_to_grid = !self.canvas.snap_to_grid;
-                }
-
-                ui.separator();
-
-                // Save / Load / Clear
-                if ui.button("Save... (Ctrl+S)").clicked() {
-                    self.save_to_file();
-                }
-                if ui.button("Load... (Ctrl+O)").clicked() {
-                    self.load_from_file();
-                }
-                if ui.button("Clear").clicked() {
-                    self.clear_circuit();
-                }
-
-                ui.separator();
-
-                // Clock Simulation controls
-                if ui.button("Tick Clock").clicked() {
-                    Simulator::tick(&mut self.circuit, ClockEdge::Rising);
-                    self.waveform.sample_circuit(&self.circuit);
-                    self.status_message = "Clock ticked".to_string();
-                }
-                let clock_btn_text = if self.clock_running {
-                    "Pause Clock"
-                } else {
-                    "Run Clock (2Hz)"
-                };
-                if ui.button(clock_btn_text).clicked() {
-                    self.clock_running = !self.clock_running;
-                }
-
-                ui.separator();
-
-                // Phase 4 Waveform & HDL Tools
-                let wave_btn = if self.waveform.is_open {
-                    "Hide Waveform"
-                } else {
-                    "Timing Waveform"
-                };
-                if ui.button(wave_btn).clicked() {
-                    self.waveform.is_open = !self.waveform.is_open;
-                }
-
-                if ui.button("Export HDL").clicked() {
-                    self.hdl_ui.open(&self.circuit);
-                }
-
-                ui.separator();
-
-                // Phase 2 Verification Tools
-                let tt_btn = ui.button(RichText::new("Truth Table").color(Theme::ACCENT_PINK));
-                if tt_btn.clicked() {
-                    self.verification_ui.is_open = true;
-                    self.verification_ui.generate_from_circuit(
-                        &self.circuit,
-                        &self.canvas.selection.selected_components,
-                    );
-                }
-
-                let lab_label = if let Some(ch) = self.verification_ui.active_challenge {
-                    format!("Lab: {}", ch.title())
-                } else {
-                    "Universal Gates Lab".to_string()
-                };
-
-                egui::ComboBox::from_id_salt("universal_lab_combo")
-                    .selected_text(lab_label)
-                    .show_ui(ui, |ui| {
+                // Tools Menu
+                ui.menu_button("Tools", |ui| {
+                    if ui
+                        .button(
+                            RichText::new("Truth Table & Verification").color(Theme::ACCENT_PINK),
+                        )
+                        .clicked()
+                    {
+                        ui.close();
+                        self.verification_ui.is_open = true;
+                        self.verification_ui.generate_from_circuit(
+                            &self.circuit,
+                            &self.canvas.selection.selected_components,
+                        );
+                    }
+                    let wave_lbl = if self.waveform.is_open {
+                        "Hide Timing Waveform"
+                    } else {
+                        "Show Timing Waveform"
+                    };
+                    if ui.button(wave_lbl).clicked() {
+                        self.waveform.is_open = !self.waveform.is_open;
+                    }
+                    ui.separator();
+                    ui.menu_button("Universal Gates Lab", |ui| {
                         for &ch in UniversalChallenge::ALL {
-                            if ui
-                                .selectable_label(
-                                    self.verification_ui.active_challenge == Some(ch),
-                                    ch.title(),
-                                )
-                                .clicked()
-                            {
+                            let is_active = self.verification_ui.active_challenge == Some(ch);
+                            if ui.selectable_label(is_active, ch.title()).clicked() {
+                                ui.close();
                                 self.push_undo();
                                 self.verification_ui.load_challenge(ch, &mut self.circuit);
                                 self.status_message = format!("Loaded Lab: {}", ch.title());
                             }
                         }
                     });
+                });
 
-                if !self.canvas.selection.selected_components.is_empty() {
-                    ui.separator();
+                // Right-aligned quick indicators
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Theme toggle button
+                    let theme_txt = if self.theme_mode.is_dark() {
+                        "Theme: Dark"
+                    } else {
+                        "Theme: Light"
+                    };
                     if ui
-                        .button(
-                            RichText::new("Package Subcircuit")
-                                .color(Theme::ACCENT_PINK)
-                                .strong(),
-                        )
+                        .button(RichText::new(theme_txt).color(Theme::ACCENT_PINK))
+                        .on_hover_text("Toggle Theme (Ctrl+T / F8)")
                         .clicked()
                     {
-                        self.new_subcircuit_name =
-                            format!("IC_{}", self.circuit.subcircuits.len() + 1);
-                        self.subcircuit_modal_open = true;
+                        self.theme_mode.toggle();
                     }
-                }
+
+                    ui.separator();
+
+                    // Clock indicator badge
+                    let (clk_text, clk_color) = if self.clock_running {
+                        ("CLK: 2Hz [RUNNING]", Theme::ACCENT_PINK)
+                    } else {
+                        ("CLK: [PAUSED]", Theme::TEXT_MUTED)
+                    };
+                    if ui
+                        .button(RichText::new(clk_text).color(clk_color).size(11.0))
+                        .on_hover_text("Click to toggle clock run/pause")
+                        .clicked()
+                    {
+                        self.clock_running = !self.clock_running;
+                    }
+
+                    ui.separator();
+
+                    // Zoom indicator badge
+                    let zoom_text = format!("{:.0}%", self.canvas.zoom * 100.0);
+                    if ui
+                        .button(
+                            RichText::new(zoom_text)
+                                .color(Theme::ACCENT_PURPLE)
+                                .size(11.0),
+                        )
+                        .on_hover_text("Click to reset zoom to 100%")
+                        .clicked()
+                    {
+                        self.canvas.zoom = 1.0;
+                    }
+
+                    // Selection badge (if items selected)
+                    let sel_count = self.canvas.selection.selected_components.len();
+                    if sel_count > 0 {
+                        ui.separator();
+                        let sel_lbl = format!("{} selected", sel_count);
+                        if ui
+                            .button(
+                                RichText::new(sel_lbl)
+                                    .color(Theme::ACCENT_PINK)
+                                    .strong()
+                                    .size(11.0),
+                            )
+                            .on_hover_text("Click to package selection into subcircuit (Ctrl+G)")
+                            .clicked()
+                        {
+                            self.new_subcircuit_name =
+                                format!("IC_{}", self.circuit.subcircuits.len() + 1);
+                            self.subcircuit_modal_open = true;
+                        }
+                    }
+                });
             });
         });
 
@@ -665,7 +783,7 @@ impl eframe::App for LogicLabApp {
         }
 
         // 2. Bottom Status Bar Panel
-        let bottom_frame = Frame::side_top_panel(ui.style()).fill(Theme::BG_PANEL);
+        let bottom_frame = Theme::glass_panel();
         Panel::bottom("bottom_status_bar")
             .frame(bottom_frame)
             .show(ui, |ui| {
@@ -678,10 +796,11 @@ impl eframe::App for LogicLabApp {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             RichText::new(format!(
-                                "Components: {} | Nets: {} | Zoom: {:.0}%",
+                                "Components: {} | Nets: {} | Zoom: {:.0}% | {}",
                                 self.circuit.components.len(),
                                 self.circuit.nets.len(),
-                                self.canvas.zoom * 100.0
+                                self.canvas.zoom * 100.0,
+                                self.theme_mode.label()
                             ))
                             .color(Theme::ACCENT_PURPLE)
                             .size(11.0),
@@ -692,7 +811,7 @@ impl eframe::App for LogicLabApp {
 
         // 3. Bottom Waveform Panel (if active)
         if self.waveform.is_open {
-            let wave_frame = Frame::side_top_panel(ui.style()).fill(Theme::BG_PANEL_RAISED);
+            let wave_frame = Theme::glass_panel();
             Panel::bottom("waveform_bottom_panel")
                 .frame(wave_frame)
                 .resizable(true)
@@ -703,21 +822,26 @@ impl eframe::App for LogicLabApp {
         }
 
         // 4. Left Palette Panel
-        let left_frame = Frame::side_top_panel(ui.style()).fill(Theme::BG_PANEL);
+        let left_frame = Theme::glass_panel();
         Panel::left("palette_panel")
             .frame(left_frame)
-            .resizable(false)
-            .default_size(200.0)
+            .resizable(true)
+            .default_size(220.0)
+            .min_size(190.0)
+            .max_size(320.0)
             .show(ui, |ui| {
                 Palette::show(ui, &mut self.selected_for_placement, &self.circuit);
             });
 
         // 5. Central Canvas Panel
-        let central_frame = Frame::central_panel(ui.style()).fill(Theme::BG_CANVAS);
+        let central_frame = Frame::central_panel(ui.style()).fill(self.theme_mode.bg_canvas());
         CentralPanel::default().frame(central_frame).show(ui, |ui| {
-            let canvas_res =
-                self.canvas
-                    .show(ui, &mut self.circuit, &mut self.selected_for_placement);
+            let canvas_res = self.canvas.show(
+                ui,
+                &mut self.circuit,
+                &mut self.selected_for_placement,
+                self.theme_mode,
+            );
             if canvas_res.placed_component || canvas_res.circuit_mutated {
                 self.waveform.sample_circuit(&self.circuit);
                 self.push_undo();
@@ -734,11 +858,7 @@ impl eframe::App for LogicLabApp {
         // 6. Subcircuit Packaging Modal
         if self.subcircuit_modal_open {
             let mut is_open = true;
-            let modal_frame = Frame::new()
-                .fill(Theme::BG_PANEL_RAISED)
-                .stroke(egui::Stroke::new(1.0, Theme::ACCENT_PURPLE))
-                .corner_radius(8.0)
-                .inner_margin(16.0);
+            let modal_frame = Theme::glass_modal();
 
             egui::Window::new("Package Selection as Subcircuit")
                 .open(&mut is_open)

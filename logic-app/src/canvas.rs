@@ -1,5 +1,5 @@
 use crate::glyphs::GlyphRenderer;
-use crate::theme::Theme;
+use crate::theme::{Theme, ThemeMode};
 use crate::tools::{ActiveTool, MarqueeState, SelectionState, WireInProgress};
 use eframe::egui::{
     self, Color32, CursorIcon, Key, Painter, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2,
@@ -82,6 +82,7 @@ impl CanvasState {
         ui: &mut Ui,
         circuit: &mut Circuit,
         selected_for_placement: &mut Option<GateKind>,
+        theme_mode: ThemeMode,
     ) -> CanvasResponse {
         let mut response_meta = CanvasResponse {
             circuit_mutated: false,
@@ -95,9 +96,9 @@ impl CanvasState {
         self.handle_pan_zoom(ui, &response);
 
         // 2. Draw Background and Grid
-        painter.rect_filled(rect, 0.0, Theme::BG_CANVAS);
+        painter.rect_filled(rect, 0.0, theme_mode.bg_canvas());
         if self.show_grid {
-            self.draw_grid(&painter, rect);
+            self.draw_grid(&painter, rect, theme_mode);
         }
 
         // 3. Find Hovered Elements
@@ -117,7 +118,7 @@ impl CanvasState {
         );
 
         // 5. Draw Wires and Nets
-        self.draw_wires(&painter, circuit);
+        self.draw_wires(&painter, circuit, theme_mode);
 
         // 6. Draw In-Progress Wire
         if let Some(wip) = &self.wire_in_progress {
@@ -145,6 +146,7 @@ impl CanvasState {
                 is_hov,
                 |p| self.canvas_to_screen(p),
                 self.zoom,
+                theme_mode,
             );
         }
 
@@ -161,6 +163,7 @@ impl CanvasState {
                 false,
                 |p| self.canvas_to_screen(p),
                 self.zoom,
+                theme_mode,
             );
         }
 
@@ -229,7 +232,7 @@ impl CanvasState {
         }
     }
 
-    fn draw_grid(&self, painter: &Painter, rect: Rect) {
+    fn draw_grid(&self, painter: &Painter, rect: Rect, theme_mode: ThemeMode) {
         let step = Self::GRID_SPACING * self.zoom;
         if step < 6.0 {
             return; // Don't draw if too small
@@ -245,7 +248,7 @@ impl CanvasState {
             let mut x = start_x - step;
             while x <= rect.max.x + step {
                 if rect.contains(Pos2::new(x, y)) {
-                    painter.circle_filled(Pos2::new(x, y), dot_radius, Theme::GRID_LINE);
+                    painter.circle_filled(Pos2::new(x, y), dot_radius, theme_mode.grid_line());
                 }
                 x += step;
             }
@@ -511,7 +514,7 @@ impl CanvasState {
         }
     }
 
-    fn draw_wires(&self, painter: &Painter, circuit: &Circuit) {
+    fn draw_wires(&self, painter: &Painter, circuit: &Circuit, theme_mode: ThemeMode) {
         for (net_id, net) in &circuit.nets {
             let src_comp = match circuit.components.get(net.source.component_id) {
                 Some(c) => c,
@@ -563,7 +566,7 @@ impl CanvasState {
                     let pill_w = (lbl.len() as f32 * 6.5 + 10.0) * self.zoom.clamp(0.8, 1.2);
                     let pill_h = 14.0 * self.zoom.clamp(0.8, 1.2);
                     let tag_rect = Rect::from_center_size(mid, egui::Vec2::new(pill_w, pill_h));
-                    painter.rect_filled(tag_rect, 3.0, Theme::BG_PANEL);
+                    painter.rect_filled(tag_rect, 3.0, theme_mode.gate_fill());
                     painter.rect_stroke(
                         tag_rect,
                         3.0,
@@ -575,7 +578,7 @@ impl CanvasState {
                         egui::Align2::CENTER_CENTER,
                         lbl,
                         egui::FontId::monospace(font_size),
-                        Theme::TEXT_PRIMARY,
+                        theme_mode.text_on_canvas(),
                     );
                 }
             }

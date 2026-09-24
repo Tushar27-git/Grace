@@ -1,5 +1,5 @@
 use crate::theme::Theme;
-use eframe::egui::{self, CornerRadius, RichText, Sense, Stroke, Ui, Vec2, Window};
+use eframe::egui::{self, RichText, Sense, Ui, Vec2, Window};
 use logic_core::{
     Circuit, CircuitIO, ComponentId, GateKind, Simulator, TruthTable, TruthTableDiff,
     TruthTableGenerator,
@@ -259,13 +259,7 @@ impl VerificationUiState {
             .resizable(true)
             .default_width(520.0)
             .default_height(440.0)
-            .frame(
-                egui::Frame::new()
-                    .fill(Theme::BG_PANEL_RAISED)
-                    .stroke(Stroke::new(1.0, Theme::ACCENT_PURPLE))
-                    .corner_radius(CornerRadius::same(8))
-                    .inner_margin(8),
-            )
+            .frame(Theme::glass_modal())
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     if ui.button("Regenerate Table").clicked() {
