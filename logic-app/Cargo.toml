@@ -1,0 +1,14 @@
+[package]
+name = "logic-app"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+arboard = "3.6.1"
+eframe = "0.36.2"
+egui = "0.36.2"
+egui_extras = "0.36.2"
+rfd = "0.17.2"
+ron = "0.12.2"
+serde = { version = "1.0.229", features = ["derive"] }
+logic-core = { path = "../logic-core" }
