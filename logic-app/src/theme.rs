@@ -104,6 +104,21 @@ impl Theme {
     pub fn glass_frame() -> egui::Frame {
         Self::glass_modal()
     }
+
+    /// Space Grotesk Bold FontId
+    pub fn font_bold(size: f32) -> egui::FontId {
+        egui::FontId::new(size, egui::FontFamily::Name("SpaceGrotesk-Bold".into()))
+    }
+
+    /// Space Grotesk Medium FontId
+    pub fn font_medium(size: f32) -> egui::FontId {
+        egui::FontId::new(size, egui::FontFamily::Name("SpaceGrotesk-Medium".into()))
+    }
+
+    /// Space Grotesk Regular FontId
+    pub fn font_regular(size: f32) -> egui::FontId {
+        egui::FontId::new(size, egui::FontFamily::Proportional)
+    }
 }
 
 pub fn apply_theme(ctx: &egui::Context) {
@@ -145,4 +160,67 @@ pub fn apply_theme(ctx: &egui::Context) {
     visuals.selection.stroke = Stroke::new(1.5, Theme::ACCENT_PINK);
 
     ctx.set_visuals(visuals);
+    setup_custom_fonts(ctx);
+}
+
+pub fn setup_custom_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        "SpaceGrotesk-Regular".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../assets/fonts/SpaceGrotesk-Regular.ttf"
+        ))),
+    );
+    fonts.font_data.insert(
+        "SpaceGrotesk-Medium".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../assets/fonts/SpaceGrotesk-Medium.ttf"
+        ))),
+    );
+    fonts.font_data.insert(
+        "SpaceGrotesk-Bold".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../assets/fonts/SpaceGrotesk-Bold.ttf"
+        ))),
+    );
+
+    // Prioritize Space Grotesk for proportional text across the entire UI
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "SpaceGrotesk-Regular".to_owned());
+
+    fonts.families.insert(
+        egui::FontFamily::Name("SpaceGrotesk-Bold".into()),
+        vec!["SpaceGrotesk-Bold".to_owned()],
+    );
+    fonts.families.insert(
+        egui::FontFamily::Name("SpaceGrotesk-Medium".into()),
+        vec!["SpaceGrotesk-Medium".to_owned()],
+    );
+
+    ctx.set_fonts(fonts);
+
+    // Configure text styles to use Space Grotesk for all egui themes
+    for egui_theme in [egui::Theme::Dark, egui::Theme::Light] {
+        let mut style = (*ctx.style_of(egui_theme)).clone();
+        style.text_styles.insert(
+            egui::TextStyle::Heading,
+            egui::FontId::new(17.0, egui::FontFamily::Name("SpaceGrotesk-Bold".into())),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Button,
+            egui::FontId::new(12.5, egui::FontFamily::Name("SpaceGrotesk-Medium".into())),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Body,
+            egui::FontId::new(12.5, egui::FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Small,
+            egui::FontId::new(10.5, egui::FontFamily::Proportional),
+        );
+        ctx.set_style_of(egui_theme, style);
+    }
 }

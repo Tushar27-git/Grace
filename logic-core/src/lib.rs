@@ -568,4 +568,119 @@ mod tests {
         assert!(vhdl.contains("architecture Structural of my_and_circuit is"));
         assert!(vhdl.contains("end Structural;"));
     }
+
+    #[test]
+    fn test_multi_input_gates_and_component_properties() {
+        // 1. Multi-input gate boolean evaluation
+        // 4-input AND: all 1s -> 1, one 0 -> 0
+        assert_eq!(
+            GateKind::And.eval(&[Signal::One, Signal::One, Signal::One, Signal::One], false),
+            vec![Signal::One]
+        );
+        assert_eq!(
+            GateKind::And.eval(
+                &[Signal::One, Signal::One, Signal::Zero, Signal::One],
+                false
+            ),
+            vec![Signal::Zero]
+        );
+
+        // 3-input OR: one 1 -> 1, all 0s -> 0
+        assert_eq!(
+            GateKind::Or.eval(&[Signal::Zero, Signal::Zero, Signal::One], false),
+            vec![Signal::One]
+        );
+        assert_eq!(
+            GateKind::Or.eval(&[Signal::Zero, Signal::Zero, Signal::Zero], false),
+            vec![Signal::Zero]
+        );
+
+        // 3-input NAND: inverse of AND
+        assert_eq!(
+            GateKind::Nand.eval(&[Signal::One, Signal::One, Signal::One], false),
+            vec![Signal::Zero]
+        );
+        assert_eq!(
+            GateKind::Nand.eval(&[Signal::One, Signal::Zero, Signal::One], false),
+            vec![Signal::One]
+        );
+
+        // 3-input NOR: inverse of OR
+        assert_eq!(
+            GateKind::Nor.eval(&[Signal::Zero, Signal::Zero, Signal::Zero], false),
+            vec![Signal::One]
+        );
+        assert_eq!(
+            GateKind::Nor.eval(&[Signal::Zero, Signal::One, Signal::Zero], false),
+            vec![Signal::Zero]
+        );
+
+        // 3-input XOR (odd parity): 1,1,1 -> 1; 1,1,0 -> 0
+        assert_eq!(
+            GateKind::Xor.eval(&[Signal::One, Signal::One, Signal::One], false),
+            vec![Signal::One]
+        );
+        assert_eq!(
+            GateKind::Xor.eval(&[Signal::One, Signal::One, Signal::Zero], false),
+            vec![Signal::Zero]
+        );
+
+        // 2. Component properties and dynamic reconfiguration
+        let mut circuit = Circuit::new();
+        let and_id = circuit.add_component(GateKind::And, (100.0, 100.0));
+
+        // Default 2 inputs
+        assert_eq!(circuit.components[and_id].input_signals.len(), 2);
+
+        // Customize label, bit_width, rotation
+        circuit.set_component_label(and_id, "U1_AND4".to_string());
+        circuit.set_component_bit_width(and_id, 8);
+        circuit.set_component_rotation(and_id, Rotation::R90);
+        assert_eq!(circuit.components[and_id].label, "U1_AND4");
+        assert_eq!(circuit.components[and_id].bit_width, 8);
+        assert_eq!(circuit.components[and_id].rotation, Rotation::R90);
+
+        // Expand to 4 inputs
+        circuit.set_component_input_count(and_id, 4);
+        assert_eq!(circuit.components[and_id].input_signals.len(), 4);
+
+        // Verify dynamic dimensions scale
+        let (hw, hh) = circuit.components[and_id].half_dimensions();
+        assert_eq!(hw, 25.0);
+        assert!(hh > 20.0); // 20.0 + (4 - 2) * 6.5 = 33.0
+
+        // Wire inputs and test pruning upon reducing inputs
+        let sw1 = circuit.add_component(GateKind::ToggleSwitch, (0.0, 0.0));
+        let sw4 = circuit.add_component(GateKind::ToggleSwitch, (0.0, 150.0));
+        circuit.connect_ports(
+            PortEndpoint {
+                component_id: sw1,
+                is_output: true,
+                port_index: 0,
+            },
+            PortEndpoint {
+                component_id: and_id,
+                is_output: false,
+                port_index: 0,
+            },
+        );
+        circuit.connect_ports(
+            PortEndpoint {
+                component_id: sw4,
+                is_output: true,
+                port_index: 0,
+            },
+            PortEndpoint {
+                component_id: and_id,
+                is_output: false,
+                port_index: 3,
+            },
+        );
+        assert_eq!(circuit.nets.len(), 2);
+
+        // Reduce to 2 inputs -> port 3 wire should be pruned automatically!
+        circuit.set_component_input_count(and_id, 2);
+        assert_eq!(circuit.components[and_id].input_signals.len(), 2);
+        assert_eq!(circuit.nets.len(), 1); // Only port 0 wire remains
+    }
 }

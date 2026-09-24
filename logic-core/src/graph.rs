@@ -77,6 +77,23 @@ pub struct ComponentNode {
     pub input_signals: Vec<Signal>,
     /// Cached output signals
     pub output_signals: Vec<Signal>,
+    /// Custom label / tag for component
+    #[serde(default)]
+    pub label: String,
+    /// Configured bit width
+    #[serde(default = "default_bit_width")]
+    pub bit_width: u8,
+    /// Custom clock frequency in Hz for clock sources
+    #[serde(default = "default_clock_hz")]
+    pub clock_hz: f32,
+}
+
+fn default_bit_width() -> u8 {
+    1
+}
+
+fn default_clock_hz() -> f32 {
+    2.0
 }
 
 impl ComponentNode {
@@ -104,7 +121,28 @@ impl ComponentNode {
             clock_prev: false,
             input_signals: vec![Signal::Zero; input_count],
             output_signals: vec![Signal::Zero; output_count],
+            label: String::new(),
+            bit_width: 1,
+            clock_hz: 2.0,
         }
+    }
+
+    pub fn input_count(&self) -> usize {
+        self.input_signals.len()
+    }
+
+    pub fn output_count(&self) -> usize {
+        self.output_signals.len()
+    }
+
+    pub fn set_input_count(&mut self, new_count: usize) {
+        let count = new_count.clamp(1, 16);
+        self.input_signals.resize(count, Signal::Zero);
+    }
+
+    pub fn set_output_count(&mut self, new_count: usize) {
+        let count = new_count.clamp(1, 16);
+        self.output_signals.resize(count, Signal::Zero);
     }
 
     pub fn port_offset_unrotated(&self, is_output: bool, port_index: usize) -> (f32, f32) {
@@ -148,7 +186,11 @@ impl ComponentNode {
             | GateKind::Nand
             | GateKind::Nor
             | GateKind::Xor
-            | GateKind::Xnor => (25.0, 20.0),
+            | GateKind::Xnor => {
+                let inputs = self.input_signals.len();
+                let extra = inputs.saturating_sub(2) as f32;
+                (25.0, 20.0 + extra * 6.5)
+            }
             GateKind::HalfAdder | GateKind::HalfSubtractor => (30.0, 24.0),
             GateKind::FullAdder | GateKind::FullSubtractor => (35.0, 30.0),
             GateKind::RippleCarryAdder4 | GateKind::CarryLookaheadAdder4 | GateKind::Alu4 => {
@@ -316,5 +358,63 @@ impl Circuit {
             .iter()
             .find(|(_, net)| net.source == source)
             .map(|(nid, _)| nid)
+    }
+
+    pub fn set_component_input_count(&mut self, id: ComponentId, count: usize) {
+        if let Some(comp) = self.components.get_mut(id) {
+            comp.set_input_count(count);
+        }
+        // Remove any wire connected to ports that were pruned
+        let mut empty_nets = Vec::new();
+        for (nid, net) in &mut self.nets {
+            net.sinks
+                .retain(|s| !(s.component_id == id && s.port_index >= count));
+            if net.sinks.is_empty() {
+                empty_nets.push(nid);
+            }
+        }
+        for nid in empty_nets {
+            self.nets.remove(nid);
+        }
+    }
+
+    pub fn set_component_output_count(&mut self, id: ComponentId, count: usize) {
+        if let Some(comp) = self.components.get_mut(id) {
+            comp.set_output_count(count);
+        }
+        // Remove any nets originating from ports that were pruned
+        let dead_nets: Vec<NetId> = self
+            .nets
+            .iter()
+            .filter(|(_, net)| net.source.component_id == id && net.source.port_index >= count)
+            .map(|(nid, _)| nid)
+            .collect();
+        for nid in dead_nets {
+            self.nets.remove(nid);
+        }
+    }
+
+    pub fn set_component_rotation(&mut self, id: ComponentId, rot: Rotation) {
+        if let Some(comp) = self.components.get_mut(id) {
+            comp.rotation = rot;
+        }
+    }
+
+    pub fn set_component_label(&mut self, id: ComponentId, label: String) {
+        if let Some(comp) = self.components.get_mut(id) {
+            comp.label = label;
+        }
+    }
+
+    pub fn set_component_bit_width(&mut self, id: ComponentId, bit_width: u8) {
+        if let Some(comp) = self.components.get_mut(id) {
+            comp.bit_width = bit_width;
+        }
+    }
+
+    pub fn set_component_clock_hz(&mut self, id: ComponentId, clock_hz: f32) {
+        if let Some(comp) = self.components.get_mut(id) {
+            comp.clock_hz = clock_hz;
+        }
     }
 }

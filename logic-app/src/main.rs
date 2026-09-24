@@ -3,6 +3,7 @@ mod canvas;
 mod glyphs;
 mod hdl_ui;
 mod palette;
+mod properties_ui;
 mod theme;
 mod tools;
 mod verification_ui;

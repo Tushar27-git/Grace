@@ -1,6 +1,7 @@
 use crate::canvas::CanvasState;
 use crate::hdl_ui::HdlUiState;
 use crate::palette::Palette;
+use crate::properties_ui::{LeftPanelTab, PropertiesUi};
 use crate::theme::{Theme, ThemeMode, apply_theme};
 use crate::verification_ui::{UniversalChallenge, VerificationUiState};
 use crate::waveform::WaveformState;
@@ -26,6 +27,8 @@ pub struct LogicLabApp {
     pub waveform: WaveformState,
     pub hdl_ui: HdlUiState,
     pub theme_mode: ThemeMode,
+    pub left_panel_tab: LeftPanelTab,
+    pub show_properties_window: bool,
 }
 
 impl LogicLabApp {
@@ -49,6 +52,8 @@ impl LogicLabApp {
             waveform: WaveformState::default(),
             hdl_ui: HdlUiState::default(),
             theme_mode: ThemeMode::Light,
+            left_panel_tab: LeftPanelTab::Components,
+            show_properties_window: true,
         }
     }
 
@@ -462,6 +467,8 @@ impl eframe::App for LogicLabApp {
                 self.rotate_selected();
             } else if i.key_pressed(Key::F8) || (ctrl && i.key_pressed(Key::T)) {
                 self.theme_mode.toggle();
+            } else if !ctrl && i.key_pressed(Key::P) {
+                self.show_properties_window = !self.show_properties_window;
             }
         });
 
@@ -470,9 +477,8 @@ impl eframe::App for LogicLabApp {
         Panel::top("top_toolbar").frame(top_frame).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(
-                    RichText::new("Logic Lab")
-                        .size(15.0)
-                        .strong()
+                    RichText::new("LOGIC LAB")
+                        .font(Theme::font_bold(14.5))
                         .color(Theme::ACCENT_PINK),
                 );
 
@@ -578,6 +584,15 @@ impl eframe::App for LogicLabApp {
                         self.theme_mode.toggle();
                     }
                     ui.separator();
+                    let prop_lbl = if self.show_properties_window {
+                        "Properties Inspector (P): Visible"
+                    } else {
+                        "Properties Inspector (P): Hidden"
+                    };
+                    if ui.button(prop_lbl).clicked() {
+                        self.show_properties_window = !self.show_properties_window;
+                    }
+                    ui.separator();
                     let grid_lbl = if self.canvas.show_grid {
                         "Grid: Hide"
                     } else {
@@ -666,12 +681,16 @@ impl eframe::App for LogicLabApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Theme toggle button
                     let theme_txt = if self.theme_mode.is_dark() {
-                        "Theme: Dark"
+                        "THEME: DARK"
                     } else {
-                        "Theme: Light"
+                        "THEME: LIGHT"
                     };
                     if ui
-                        .button(RichText::new(theme_txt).color(Theme::ACCENT_PINK))
+                        .button(
+                            RichText::new(theme_txt)
+                                .font(Theme::font_bold(10.5))
+                                .color(Theme::ACCENT_PINK),
+                        )
                         .on_hover_text("Toggle Theme (Ctrl+T / F8)")
                         .clicked()
                     {
@@ -682,12 +701,16 @@ impl eframe::App for LogicLabApp {
 
                     // Clock indicator badge
                     let (clk_text, clk_color) = if self.clock_running {
-                        ("CLK: 2Hz [RUNNING]", Theme::ACCENT_PINK)
+                        ("CLK: 2HZ [RUNNING]", Theme::ACCENT_PINK)
                     } else {
                         ("CLK: [PAUSED]", Theme::TEXT_MUTED)
                     };
                     if ui
-                        .button(RichText::new(clk_text).color(clk_color).size(11.0))
+                        .button(
+                            RichText::new(clk_text)
+                                .font(Theme::font_bold(10.5))
+                                .color(clk_color),
+                        )
                         .on_hover_text("Click to toggle clock run/pause")
                         .clicked()
                     {
@@ -697,12 +720,12 @@ impl eframe::App for LogicLabApp {
                     ui.separator();
 
                     // Zoom indicator badge
-                    let zoom_text = format!("{:.0}%", self.canvas.zoom * 100.0);
+                    let zoom_text = format!("{:.0}% ZOOM", self.canvas.zoom * 100.0);
                     if ui
                         .button(
                             RichText::new(zoom_text)
-                                .color(Theme::ACCENT_PURPLE)
-                                .size(11.0),
+                                .font(Theme::font_bold(10.5))
+                                .color(Theme::ACCENT_PURPLE),
                         )
                         .on_hover_text("Click to reset zoom to 100%")
                         .clicked()
@@ -714,13 +737,12 @@ impl eframe::App for LogicLabApp {
                     let sel_count = self.canvas.selection.selected_components.len();
                     if sel_count > 0 {
                         ui.separator();
-                        let sel_lbl = format!("{} selected", sel_count);
+                        let sel_lbl = format!("{} SELECTED", sel_count);
                         if ui
                             .button(
                                 RichText::new(sel_lbl)
-                                    .color(Theme::ACCENT_PINK)
-                                    .strong()
-                                    .size(11.0),
+                                    .font(Theme::font_bold(10.5))
+                                    .color(Theme::ACCENT_PINK),
                             )
                             .on_hover_text("Click to package selection into subcircuit (Ctrl+G)")
                             .clicked()
@@ -728,6 +750,29 @@ impl eframe::App for LogicLabApp {
                             self.new_subcircuit_name =
                                 format!("IC_{}", self.circuit.subcircuits.len() + 1);
                             self.subcircuit_modal_open = true;
+                        }
+
+                        if sel_count == 1 {
+                            ui.separator();
+                            let is_open = self.show_properties_window
+                                || self.left_panel_tab == LeftPanelTab::Properties;
+                            let prop_col = if is_open {
+                                Theme::ACCENT_PINK
+                            } else {
+                                Theme::TEXT_PRIMARY
+                            };
+                            if ui
+                                .button(
+                                    RichText::new("PROPERTIES")
+                                        .font(Theme::font_bold(10.5))
+                                        .color(prop_col),
+                                )
+                                .on_hover_text("Open Component Properties (P)")
+                                .clicked()
+                            {
+                                self.show_properties_window = true;
+                                self.left_panel_tab = LeftPanelTab::Properties;
+                            }
                         }
                     }
                 });
@@ -821,16 +866,84 @@ impl eframe::App for LogicLabApp {
                 });
         }
 
-        // 4. Left Palette Panel
+        // 4. Left Sidebar Panel (Components & Properties Tabs)
         let left_frame = Theme::glass_panel();
-        Panel::left("palette_panel")
+        Panel::left("left_sidebar_panel")
             .frame(left_frame)
             .resizable(true)
-            .default_size(220.0)
-            .min_size(190.0)
-            .max_size(320.0)
+            .default_size(240.0)
+            .min_size(200.0)
+            .max_size(360.0)
             .show(ui, |ui| {
-                Palette::show(ui, &mut self.selected_for_placement, &self.circuit);
+                let sel_count = self.canvas.selection.selected_components.len();
+                let selected_comp = if sel_count == 1 {
+                    self.canvas
+                        .selection
+                        .selected_components
+                        .iter()
+                        .copied()
+                        .next()
+                } else {
+                    None
+                };
+
+                // Sleek Tab bar
+                ui.horizontal(|ui| {
+                    let comp_active = self.left_panel_tab == LeftPanelTab::Components;
+                    let prop_active = self.left_panel_tab == LeftPanelTab::Properties;
+
+                    let comp_btn = if comp_active {
+                        egui::Button::new(
+                            RichText::new("COMPONENTS")
+                                .font(Theme::font_bold(10.5))
+                                .color(Theme::ACCENT_PINK),
+                        )
+                        .stroke(egui::Stroke::new(1.0, Theme::ACCENT_PINK))
+                    } else {
+                        egui::Button::new(
+                            RichText::new("COMPONENTS").font(Theme::font_regular(10.5)),
+                        )
+                    };
+                    if ui.add(comp_btn).clicked() {
+                        self.left_panel_tab = LeftPanelTab::Components;
+                    }
+
+                    let prop_label = if sel_count == 1 {
+                        "PROPERTIES •"
+                    } else {
+                        "PROPERTIES"
+                    };
+                    let prop_btn = if prop_active {
+                        egui::Button::new(
+                            RichText::new(prop_label)
+                                .font(Theme::font_bold(10.5))
+                                .color(Theme::ACCENT_PINK),
+                        )
+                        .stroke(egui::Stroke::new(1.0, Theme::ACCENT_PINK))
+                    } else {
+                        egui::Button::new(RichText::new(prop_label).font(Theme::font_regular(10.5)))
+                    };
+                    if ui.add(prop_btn).clicked() {
+                        self.left_panel_tab = LeftPanelTab::Properties;
+                    }
+                });
+
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                match self.left_panel_tab {
+                    LeftPanelTab::Components => {
+                        Palette::show(ui, &mut self.selected_for_placement, &self.circuit);
+                    }
+                    LeftPanelTab::Properties => {
+                        if PropertiesUi::show_panel(ui, &mut self.circuit, selected_comp) {
+                            Simulator::settle(&mut self.circuit);
+                            self.waveform.sample_circuit(&self.circuit);
+                            self.push_undo();
+                        }
+                    }
+                }
             });
 
         // 5. Central Canvas Panel
@@ -848,6 +961,31 @@ impl eframe::App for LogicLabApp {
             }
         });
 
+        // 6. Floating Properties Inspector Window (Canvas top-right / middle)
+        let selected_comp = if self.canvas.selection.selected_components.len() == 1 {
+            self.canvas
+                .selection
+                .selected_components
+                .iter()
+                .copied()
+                .next()
+        } else {
+            None
+        };
+        if self.show_properties_window
+            && selected_comp.is_some()
+            && PropertiesUi::show_floating_window(
+                ui.ctx(),
+                &mut self.circuit,
+                selected_comp,
+                &mut self.show_properties_window,
+            )
+        {
+            Simulator::settle(&mut self.circuit);
+            self.waveform.sample_circuit(&self.circuit);
+            self.push_undo();
+        }
+
         // 5. Verification & Truth Table Modal
         self.verification_ui.show(
             ui.ctx(),
@@ -860,52 +998,56 @@ impl eframe::App for LogicLabApp {
             let mut is_open = true;
             let modal_frame = Theme::glass_modal();
 
-            egui::Window::new("Package Selection as Subcircuit")
-                .open(&mut is_open)
-                .frame(modal_frame)
-                .resizable(false)
-                .collapsible(false)
-                .default_size(egui::Vec2::new(320.0, 180.0))
-                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-                .show(ui.ctx(), |ui| {
-                    ui.label(
-                        RichText::new("Package selected components into a reusable IC block.")
-                            .size(12.0)
-                            .color(Theme::TEXT_PRIMARY.gamma_multiply(0.7)),
-                    );
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        ui.label("Name:");
-                        ui.text_edit_singleline(&mut self.new_subcircuit_name);
-                    });
-                    ui.add_space(8.0);
-                    let sel_count = self.canvas.selection.selected_components.len();
-                    ui.label(
-                        RichText::new(format!("Includes {} selected components", sel_count))
-                            .size(11.0)
-                            .color(Theme::ACCENT_PURPLE),
-                    );
-                    ui.add_space(12.0);
-                    ui.horizontal(|ui| {
-                        if ui
-                            .button(
-                                RichText::new("Create Subcircuit")
-                                    .color(Theme::ACCENT_PINK)
-                                    .strong(),
-                            )
-                            .clicked()
-                        {
-                            let name = self.new_subcircuit_name.trim().to_string();
-                            if !name.is_empty() {
-                                self.package_selection_into_subcircuit(name);
-                                self.subcircuit_modal_open = false;
-                            }
-                        }
-                        if ui.button("Cancel").clicked() {
+            egui::Window::new(
+                RichText::new("PACKAGE SUBCIRCUIT")
+                    .font(Theme::font_bold(13.5))
+                    .color(Theme::TEXT_PRIMARY),
+            )
+            .open(&mut is_open)
+            .frame(modal_frame)
+            .resizable(false)
+            .collapsible(false)
+            .default_size(egui::Vec2::new(320.0, 180.0))
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ui.ctx(), |ui| {
+                ui.label(
+                    RichText::new("Package selected components into a reusable IC block.")
+                        .size(12.0)
+                        .color(Theme::TEXT_PRIMARY.gamma_multiply(0.7)),
+                );
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label("Name:");
+                    ui.text_edit_singleline(&mut self.new_subcircuit_name);
+                });
+                ui.add_space(8.0);
+                let sel_count = self.canvas.selection.selected_components.len();
+                ui.label(
+                    RichText::new(format!("Includes {} selected components", sel_count))
+                        .size(11.0)
+                        .color(Theme::ACCENT_PURPLE),
+                );
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(
+                            RichText::new("CREATE SUBCIRCUIT")
+                                .font(Theme::font_bold(11.5))
+                                .color(Theme::ACCENT_PINK),
+                        )
+                        .clicked()
+                    {
+                        let name = self.new_subcircuit_name.trim().to_string();
+                        if !name.is_empty() {
+                            self.package_selection_into_subcircuit(name);
                             self.subcircuit_modal_open = false;
                         }
-                    });
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.subcircuit_modal_open = false;
+                    }
                 });
+            });
             if !is_open {
                 self.subcircuit_modal_open = false;
             }

@@ -68,9 +68,8 @@ impl Palette {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("Components")
-                    .size(14.0)
-                    .strong()
+                egui::RichText::new("COMPONENTS")
+                    .font(Theme::font_bold(13.0))
                     .color(Theme::TEXT_PRIMARY),
             );
         });
@@ -145,10 +144,9 @@ impl Palette {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("Custom Subcircuits")
-                            .size(11.0)
-                            .color(Theme::ACCENT_PINK)
-                            .strong(),
+                        egui::RichText::new("CUSTOM SUBCIRCUITS")
+                            .font(Theme::font_bold(10.5))
+                            .color(Theme::ACCENT_PINK),
                     );
                     let avail_w = ui.available_width();
                     if avail_w > 12.0 {
@@ -203,10 +201,9 @@ impl Palette {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new(title)
-                    .size(11.0)
-                    .color(Theme::ACCENT_PURPLE)
-                    .strong(),
+                egui::RichText::new(title.to_uppercase())
+                    .font(Theme::font_bold(10.5))
+                    .color(Theme::ACCENT_PURPLE),
             );
             let avail_w = ui.available_width();
             if avail_w > 12.0 {
@@ -316,7 +313,7 @@ impl Palette {
             text_pos,
             egui::Align2::LEFT_CENTER,
             &text,
-            egui::FontId::proportional(11.5),
+            Theme::font_regular(11.5),
             text_color,
         );
 

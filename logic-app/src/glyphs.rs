@@ -38,18 +38,18 @@ impl GlyphRenderer {
 
         // 1. Draw input pin stubs
         let in_count = comp.input_signals.len();
-        let (hw, _) = comp.half_dimensions();
+        let (hw, hh) = comp.half_dimensions();
         for i in 0..in_count {
             let port_offset = comp.port_offset_unrotated(false, i);
             let y = port_offset.1;
             let body_edge_x = match comp.kind {
                 GateKind::And | GateKind::Nand => -25.0,
                 GateKind::Or | GateKind::Nor => {
-                    let s = (y / 20.0).clamp(-1.0, 1.0);
+                    let s = (y / hh).clamp(-1.0, 1.0);
                     -25.0 + 12.0 * (1.0 - s * s)
                 }
                 GateKind::Xor | GateKind::Xnor => {
-                    let s = (y / 20.0).clamp(-1.0, 1.0);
+                    let s = (y / hh).clamp(-1.0, 1.0);
                     -32.0 + 12.0 * (1.0 - s * s)
                 }
                 GateKind::Not => -20.0,
@@ -94,17 +94,17 @@ impl GlyphRenderer {
         // 3. Draw gate/block body symbol with crisp function name labels
         match &comp.kind {
             GateKind::And => {
-                Self::draw_and_shape(painter, &local_to_screen, body_fill, body_stroke);
+                Self::draw_and_shape(painter, &local_to_screen, body_fill, body_stroke, hh);
                 painter.text(
                     local_to_screen(-5.0, 0.0),
                     egui::Align2::CENTER_CENTER,
                     "AND",
-                    egui::FontId::monospace(10.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::font_bold(10.0 * zoom.clamp(0.7, 1.4)),
                     Theme::TEXT_PRIMARY,
                 );
             }
             GateKind::Nand => {
-                Self::draw_and_shape(painter, &local_to_screen, body_fill, body_stroke);
+                Self::draw_and_shape(painter, &local_to_screen, body_fill, body_stroke, hh);
                 Self::draw_bubble(
                     painter,
                     local_to_screen(28.5, 0.0),
@@ -116,22 +116,22 @@ impl GlyphRenderer {
                     local_to_screen(-5.0, 0.0),
                     egui::Align2::CENTER_CENTER,
                     "NAND",
-                    egui::FontId::monospace(9.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::font_bold(9.0 * zoom.clamp(0.7, 1.4)),
                     Theme::TEXT_PRIMARY,
                 );
             }
             GateKind::Or => {
-                Self::draw_or_shape(painter, &local_to_screen, body_fill, body_stroke);
+                Self::draw_or_shape(painter, &local_to_screen, body_fill, body_stroke, hh);
                 painter.text(
                     local_to_screen(2.0, 0.0),
                     egui::Align2::CENTER_CENTER,
                     "OR",
-                    egui::FontId::monospace(10.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::font_bold(10.0 * zoom.clamp(0.7, 1.4)),
                     Theme::TEXT_PRIMARY,
                 );
             }
             GateKind::Nor => {
-                Self::draw_or_shape(painter, &local_to_screen, body_fill, body_stroke);
+                Self::draw_or_shape(painter, &local_to_screen, body_fill, body_stroke, hh);
                 Self::draw_bubble(
                     painter,
                     local_to_screen(28.5, 0.0),
@@ -143,22 +143,22 @@ impl GlyphRenderer {
                     local_to_screen(2.0, 0.0),
                     egui::Align2::CENTER_CENTER,
                     "NOR",
-                    egui::FontId::monospace(9.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::font_bold(9.0 * zoom.clamp(0.7, 1.4)),
                     Theme::TEXT_PRIMARY,
                 );
             }
             GateKind::Xor => {
-                Self::draw_xor_shape(painter, &local_to_screen, body_fill, body_stroke);
+                Self::draw_xor_shape(painter, &local_to_screen, body_fill, body_stroke, hh);
                 painter.text(
                     local_to_screen(2.0, 0.0),
                     egui::Align2::CENTER_CENTER,
                     "XOR",
-                    egui::FontId::monospace(10.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::font_bold(10.0 * zoom.clamp(0.7, 1.4)),
                     Theme::TEXT_PRIMARY,
                 );
             }
             GateKind::Xnor => {
-                Self::draw_xor_shape(painter, &local_to_screen, body_fill, body_stroke);
+                Self::draw_xor_shape(painter, &local_to_screen, body_fill, body_stroke, hh);
                 Self::draw_bubble(
                     painter,
                     local_to_screen(28.5, 0.0),
@@ -170,7 +170,7 @@ impl GlyphRenderer {
                     local_to_screen(2.0, 0.0),
                     egui::Align2::CENTER_CENTER,
                     "XNOR",
-                    egui::FontId::monospace(9.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::font_bold(9.0 * zoom.clamp(0.7, 1.4)),
                     Theme::TEXT_PRIMARY,
                 );
             }
@@ -187,7 +187,7 @@ impl GlyphRenderer {
                     local_to_screen(-5.0, 0.0),
                     egui::Align2::CENTER_CENTER,
                     "NOT",
-                    egui::FontId::monospace(9.0 * zoom.clamp(0.7, 1.4)),
+                    Theme::font_bold(9.0 * zoom.clamp(0.7, 1.4)),
                     Theme::TEXT_PRIMARY,
                 );
             }
@@ -264,6 +264,18 @@ impl GlyphRenderer {
                 );
             }
         }
+
+        // 4. Draw custom component label if set (e.g. "U1", "ENABLE", "G1")
+        if !comp.label.is_empty() {
+            let label_pos = local_to_screen(0.0, -hh - 8.0);
+            painter.text(
+                label_pos,
+                egui::Align2::CENTER_BOTTOM,
+                &comp.label,
+                Theme::font_bold(10.5 * zoom.clamp(0.7, 1.4)),
+                Theme::TEXT_PRIMARY,
+            );
+        }
     }
 
     fn signal_color(sig: Signal) -> Color32 {
@@ -315,22 +327,23 @@ impl GlyphRenderer {
         local_to_screen: &impl Fn(f32, f32) -> Pos2,
         fill: Color32,
         stroke: Stroke,
+        half_h: f32,
     ) {
         let mut pts = Vec::with_capacity(22);
-        pts.push(local_to_screen(-25.0, -20.0));
-        pts.push(local_to_screen(0.0, -20.0));
+        pts.push(local_to_screen(-25.0, -half_h));
+        pts.push(local_to_screen(0.0, -half_h));
 
         let segments = 16;
         for i in 1..segments {
             let t =
                 -std::f32::consts::FRAC_PI_2 + (i as f32 / segments as f32) * std::f32::consts::PI;
             let x = 25.0 * t.cos();
-            let y = 20.0 * t.sin();
+            let y = half_h * t.sin();
             pts.push(local_to_screen(x, y));
         }
 
-        pts.push(local_to_screen(0.0, 20.0));
-        pts.push(local_to_screen(-25.0, 20.0));
+        pts.push(local_to_screen(0.0, half_h));
+        pts.push(local_to_screen(-25.0, half_h));
 
         painter.add(egui::epaint::PathShape::convex_polygon(pts, fill, stroke));
     }
@@ -340,33 +353,34 @@ impl GlyphRenderer {
         local_to_screen: &impl Fn(f32, f32) -> Pos2,
         fill: Color32,
         stroke: Stroke,
+        half_h: f32,
     ) {
         let segments = 24;
 
         // 1. Construct the exact perimeter points in continuous counter-clockwise order
         let mut perimeter = Vec::with_capacity(segments * 3 + 2);
 
-        // Top curve from (-25.0, -20.0) to (25.0, 0.0)
+        // Top curve from (-25.0, -half_h) to (25.0, 0.0)
         for i in 0..=segments {
             let t = i as f32 / segments as f32;
             let x = -25.0 + 50.0 * t;
-            let y = -20.0 * (1.0 - t * t);
+            let y = -half_h * (1.0 - t * t);
             perimeter.push(local_to_screen(x, y));
         }
 
-        // Bottom curve from (25.0, 0.0) to (-25.0, 20.0)
+        // Bottom curve from (25.0, 0.0) to (-25.0, half_h)
         for i in 1..=segments {
             let t = i as f32 / segments as f32;
             let x = 25.0 - 50.0 * t;
-            let y = 20.0 * (1.0 - (1.0 - t) * (1.0 - t));
+            let y = half_h * (1.0 - (1.0 - t) * (1.0 - t));
             perimeter.push(local_to_screen(x, y));
         }
 
-        // Back concave curve from (-25.0, 20.0) inward to (-13.0, 0.0) and to (-25.0, -20.0)
+        // Back concave curve from (-25.0, half_h) inward to (-13.0, 0.0) and to (-25.0, -half_h)
         for i in 1..segments {
             let t = i as f32 / segments as f32;
-            let y = 20.0 - 40.0 * t;
-            let s = y / 20.0;
+            let y = half_h - 2.0 * half_h * t;
+            let s = y / half_h;
             let x = -25.0 + 12.0 * (1.0 - s * s);
             perimeter.push(local_to_screen(x, y));
         }
@@ -406,16 +420,17 @@ impl GlyphRenderer {
         local_to_screen: &impl Fn(f32, f32) -> Pos2,
         fill: Color32,
         stroke: Stroke,
+        half_h: f32,
     ) {
-        Self::draw_or_shape(painter, local_to_screen, fill, stroke);
+        Self::draw_or_shape(painter, local_to_screen, fill, stroke, half_h);
 
         // Draw parallel outer input arc
         let segments = 24;
         let mut arc_pts = Vec::with_capacity(segments + 1);
         for i in 0..=segments {
             let t = i as f32 / segments as f32;
-            let y = -20.0 + 40.0 * t;
-            let s = y / 20.0;
+            let y = -half_h + 2.0 * half_h * t;
+            let s = y / half_h;
             let x = -32.0 + 12.0 * (1.0 - s * s);
             arc_pts.push(local_to_screen(x, y));
         }
@@ -725,7 +740,7 @@ impl GlyphRenderer {
             rect.center(),
             egui::Align2::CENTER_CENTER,
             hex_char,
-            egui::FontId::monospace(24.0 * zoom.clamp(0.6, 1.8)),
+            Theme::font_bold(24.0 * zoom.clamp(0.6, 1.8)),
             Theme::ACCENT_PINK,
         );
     }
@@ -864,8 +879,8 @@ impl GlyphRenderer {
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            title,
-            egui::FontId::proportional(12.0 * zoom.clamp(0.7, 1.4)),
+            title.to_uppercase(),
+            Theme::font_bold(12.0 * zoom.clamp(0.7, 1.4)),
             Theme::TEXT_PRIMARY,
         );
 
@@ -878,8 +893,8 @@ impl GlyphRenderer {
             painter.text(
                 lbl_pos,
                 egui::Align2::LEFT_CENTER,
-                lbl,
-                egui::FontId::monospace(8.0 * zoom.clamp(0.6, 1.2)),
+                lbl.to_uppercase(),
+                Theme::font_bold(8.0 * zoom.clamp(0.6, 1.2)),
                 Theme::ACCENT_PURPLE,
             );
         }
@@ -893,8 +908,8 @@ impl GlyphRenderer {
             painter.text(
                 lbl_pos,
                 egui::Align2::RIGHT_CENTER,
-                lbl,
-                egui::FontId::monospace(8.0 * zoom.clamp(0.6, 1.2)),
+                lbl.to_uppercase(),
+                Theme::font_bold(8.0 * zoom.clamp(0.6, 1.2)),
                 Theme::ACCENT_PINK,
             );
         }

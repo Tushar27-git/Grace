@@ -254,155 +254,153 @@ impl VerificationUiState {
 
         let mut is_open_local = self.is_open;
 
-        Window::new(RichText::new("Truth Table & Verification").color(Theme::TEXT_PRIMARY))
-            .open(&mut is_open_local)
-            .resizable(true)
-            .default_width(520.0)
-            .default_height(440.0)
-            .frame(Theme::glass_modal())
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.button("Regenerate Table").clicked() {
-                        self.generate_from_circuit(circuit, selected_components);
-                    }
-
-                    if let Some(table) = &self.current_table {
-                        if ui.button("Copy Table").clicked() {
-                            let text = table.to_plain_text();
-                            if let Ok(mut cb) = arboard::Clipboard::new() {
-                                let _ = cb.set_text(text);
-                            }
-                        }
-
-                        if ui.button("Export CSV").clicked()
-                            && let Some(path) = rfd::FileDialog::new()
-                                .add_filter("CSV", &["csv"])
-                                .set_file_name("truth_table.csv")
-                                .save_file()
-                        {
-                            let _ = fs::write(&path, table.to_csv());
-                        }
-
-                        if ui.button("Export Text").clicked()
-                            && let Some(path) = rfd::FileDialog::new()
-                                .add_filter("Text", &["txt"])
-                                .set_file_name("truth_table.txt")
-                                .save_file()
-                        {
-                            let _ = fs::write(&path, table.to_plain_text());
-                        }
-                    }
-                });
-
-                ui.separator();
-
-                // Verification Mode Controls
-                ui.horizontal(|ui| {
-                    if ui
-                        .checkbox(&mut self.verification_mode, "Verification Mode")
-                        .changed()
-                    {
-                        self.update_diff();
-                    }
-
-                    if self.verification_mode {
-                        ui.label("Target Function:");
-                        let prev_target = self.expected_target.clone();
-                        egui::ComboBox::from_id_salt("verify_target_combo")
-                            .selected_text(self.expected_target.display_name())
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(
-                                    &mut self.expected_target,
-                                    GateKind::Not,
-                                    "NOT Gate",
-                                );
-                                ui.selectable_value(
-                                    &mut self.expected_target,
-                                    GateKind::And,
-                                    "AND Gate",
-                                );
-                                ui.selectable_value(
-                                    &mut self.expected_target,
-                                    GateKind::Or,
-                                    "OR Gate",
-                                );
-                                ui.selectable_value(
-                                    &mut self.expected_target,
-                                    GateKind::Xor,
-                                    "XOR Gate",
-                                );
-                                ui.selectable_value(
-                                    &mut self.expected_target,
-                                    GateKind::Nand,
-                                    "NAND Gate",
-                                );
-                                ui.selectable_value(
-                                    &mut self.expected_target,
-                                    GateKind::Nor,
-                                    "NOR Gate",
-                                );
-                                ui.selectable_value(
-                                    &mut self.expected_target,
-                                    GateKind::Xnor,
-                                    "XNOR Gate",
-                                );
-                            });
-
-                        if prev_target != self.expected_target {
-                            self.update_diff();
-                        }
-                    }
-                });
-
-                if let Some(diff) = &self.diff_result {
-                    ui.add_space(4.0);
-                    if diff.is_match {
-                        ui.label(
-                            RichText::new(
-                                "VERIFICATION PASSED: All outputs match expected function.",
-                            )
-                            .color(Theme::ACCENT_PINK)
-                            .strong(),
-                        );
-                    } else {
-                        ui.label(
-                            RichText::new(format!(
-                                "VERIFICATION FAILED: {}/{} mismatches detected.",
-                                diff.mismatches.len(),
-                                diff.total_rows
-                            ))
-                            .color(Theme::ACCENT_RED)
-                            .strong(),
-                        );
-                    }
+        Window::new(
+            RichText::new("TRUTH TABLE & VERIFICATION")
+                .font(Theme::font_bold(13.5))
+                .color(Theme::TEXT_PRIMARY),
+        )
+        .open(&mut is_open_local)
+        .resizable(true)
+        .default_width(520.0)
+        .default_height(440.0)
+        .frame(Theme::glass_modal())
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("Regenerate Table").clicked() {
+                    self.generate_from_circuit(circuit, selected_components);
                 }
 
-                ui.separator();
+                if let Some(table) = &self.current_table {
+                    if ui.button("Copy Table").clicked() {
+                        let text = table.to_plain_text();
+                        if let Ok(mut cb) = arboard::Clipboard::new() {
+                            let _ = cb.set_text(text);
+                        }
+                    }
 
-                if let Some(err) = &self.error_message {
-                    ui.add_space(10.0);
-                    ui.label(RichText::new(err).color(Theme::ACCENT_RED));
-                } else if let Some(table) = &self.current_table {
-                    ui.label(
-                        RichText::new("Click a row to drive live canvas to that input state:")
-                            .size(11.0)
-                            .color(Theme::ACCENT_PURPLE),
-                    );
-                    ui.add_space(6.0);
+                    if ui.button("Export CSV").clicked()
+                        && let Some(path) = rfd::FileDialog::new()
+                            .add_filter("CSV", &["csv"])
+                            .set_file_name("truth_table.csv")
+                            .save_file()
+                    {
+                        let _ = fs::write(&path, table.to_csv());
+                    }
 
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        Self::render_truth_table_grid(
-                            ui,
-                            table,
-                            &self.current_io,
-                            self.diff_result.as_ref(),
-                            circuit,
-                        );
-                    });
-                } else {
-                    ui.label("Click 'Regenerate Table' to analyze the current circuit.");
+                    if ui.button("Export Text").clicked()
+                        && let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Text", &["txt"])
+                            .set_file_name("truth_table.txt")
+                            .save_file()
+                    {
+                        let _ = fs::write(&path, table.to_plain_text());
+                    }
                 }
             });
+
+            ui.separator();
+
+            // Verification Mode Controls
+            ui.horizontal(|ui| {
+                if ui
+                    .checkbox(&mut self.verification_mode, "Verification Mode")
+                    .changed()
+                {
+                    self.update_diff();
+                }
+
+                if self.verification_mode {
+                    ui.label("Target Function:");
+                    let prev_target = self.expected_target.clone();
+                    egui::ComboBox::from_id_salt("verify_target_combo")
+                        .selected_text(self.expected_target.display_name())
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.expected_target,
+                                GateKind::Not,
+                                "NOT Gate",
+                            );
+                            ui.selectable_value(
+                                &mut self.expected_target,
+                                GateKind::And,
+                                "AND Gate",
+                            );
+                            ui.selectable_value(&mut self.expected_target, GateKind::Or, "OR Gate");
+                            ui.selectable_value(
+                                &mut self.expected_target,
+                                GateKind::Xor,
+                                "XOR Gate",
+                            );
+                            ui.selectable_value(
+                                &mut self.expected_target,
+                                GateKind::Nand,
+                                "NAND Gate",
+                            );
+                            ui.selectable_value(
+                                &mut self.expected_target,
+                                GateKind::Nor,
+                                "NOR Gate",
+                            );
+                            ui.selectable_value(
+                                &mut self.expected_target,
+                                GateKind::Xnor,
+                                "XNOR Gate",
+                            );
+                        });
+
+                    if prev_target != self.expected_target {
+                        self.update_diff();
+                    }
+                }
+            });
+
+            if let Some(diff) = &self.diff_result {
+                ui.add_space(4.0);
+                if diff.is_match {
+                    ui.label(
+                        RichText::new("VERIFICATION PASSED: All outputs match expected function.")
+                            .color(Theme::ACCENT_PINK)
+                            .strong(),
+                    );
+                } else {
+                    ui.label(
+                        RichText::new(format!(
+                            "VERIFICATION FAILED: {}/{} mismatches detected.",
+                            diff.mismatches.len(),
+                            diff.total_rows
+                        ))
+                        .color(Theme::ACCENT_RED)
+                        .strong(),
+                    );
+                }
+            }
+
+            ui.separator();
+
+            if let Some(err) = &self.error_message {
+                ui.add_space(10.0);
+                ui.label(RichText::new(err).color(Theme::ACCENT_RED));
+            } else if let Some(table) = &self.current_table {
+                ui.label(
+                    RichText::new("Click a row to drive live canvas to that input state:")
+                        .size(11.0)
+                        .color(Theme::ACCENT_PURPLE),
+                );
+                ui.add_space(6.0);
+
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    Self::render_truth_table_grid(
+                        ui,
+                        table,
+                        &self.current_io,
+                        self.diff_result.as_ref(),
+                        circuit,
+                    );
+                });
+            } else {
+                ui.label("Click 'Regenerate Table' to analyze the current circuit.");
+            }
+        });
 
         self.is_open = is_open_local;
     }
@@ -420,23 +418,35 @@ impl VerificationUiState {
             .show(ui, |ui| {
                 // Header row
                 for name in &table.input_names {
-                    ui.label(RichText::new(name).strong().color(Theme::ACCENT_PURPLE));
+                    ui.label(
+                        RichText::new(name.to_uppercase())
+                            .font(Theme::font_bold(11.5))
+                            .color(Theme::ACCENT_PURPLE),
+                    );
                 }
                 for name in &table.output_names {
                     let label = if diff.is_some() {
-                        format!("{} (Act)", name)
+                        format!("{} (ACT)", name.to_uppercase())
                     } else {
-                        name.clone()
+                        name.to_uppercase()
                     };
-                    ui.label(RichText::new(label).strong().color(Theme::ACCENT_PINK));
+                    ui.label(
+                        RichText::new(label)
+                            .font(Theme::font_bold(11.5))
+                            .color(Theme::ACCENT_PINK),
+                    );
                 }
                 if diff.is_some() {
                     ui.label(
-                        RichText::new("Expected")
-                            .strong()
+                        RichText::new("EXPECTED")
+                            .font(Theme::font_bold(11.5))
                             .color(Theme::TEXT_PRIMARY),
                     );
-                    ui.label(RichText::new("Status").strong().color(Theme::TEXT_PRIMARY));
+                    ui.label(
+                        RichText::new("STATUS")
+                            .font(Theme::font_bold(11.5))
+                            .color(Theme::TEXT_PRIMARY),
+                    );
                 }
                 ui.end_row();
 

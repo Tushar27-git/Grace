@@ -577,7 +577,7 @@ impl CanvasState {
                         mid,
                         egui::Align2::CENTER_CENTER,
                         lbl,
-                        egui::FontId::monospace(font_size),
+                        Theme::font_bold(font_size),
                         theme_mode.text_on_canvas(),
                     );
                 }

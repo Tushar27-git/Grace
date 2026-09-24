@@ -135,38 +135,62 @@ impl Simulator {
         match &comp.kind {
             // 1. Primitive Logic Gates
             GateKind::And => {
-                let a = inputs.first().copied().unwrap_or(Signal::Zero);
-                let b = inputs.get(1).copied().unwrap_or(Signal::Zero);
-                vec![a & b]
+                let mut res = Signal::One;
+                for &inp in inputs {
+                    res = res & inp;
+                }
+                vec![res]
             }
             GateKind::Or => {
-                let a = inputs.first().copied().unwrap_or(Signal::Zero);
-                let b = inputs.get(1).copied().unwrap_or(Signal::Zero);
-                vec![a | b]
+                let mut res = Signal::Zero;
+                for &inp in inputs {
+                    res = res | inp;
+                }
+                vec![res]
             }
             GateKind::Not => {
                 let a = inputs.first().copied().unwrap_or(Signal::Zero);
                 vec![!a]
             }
             GateKind::Nand => {
-                let a = inputs.first().copied().unwrap_or(Signal::Zero);
-                let b = inputs.get(1).copied().unwrap_or(Signal::Zero);
-                vec![a.nand(b)]
+                let mut res = Signal::One;
+                for &inp in inputs {
+                    res = res & inp;
+                }
+                vec![!res]
             }
             GateKind::Nor => {
-                let a = inputs.first().copied().unwrap_or(Signal::Zero);
-                let b = inputs.get(1).copied().unwrap_or(Signal::Zero);
-                vec![a.nor(b)]
+                let mut res = Signal::Zero;
+                for &inp in inputs {
+                    res = res | inp;
+                }
+                vec![!res]
             }
             GateKind::Xor => {
-                let a = inputs.first().copied().unwrap_or(Signal::Zero);
-                let b = inputs.get(1).copied().unwrap_or(Signal::Zero);
-                vec![a ^ b]
+                let mut count = 0;
+                for &inp in inputs {
+                    if inp.is_high() {
+                        count += 1;
+                    }
+                }
+                vec![if count % 2 == 1 {
+                    Signal::One
+                } else {
+                    Signal::Zero
+                }]
             }
             GateKind::Xnor => {
-                let a = inputs.first().copied().unwrap_or(Signal::Zero);
-                let b = inputs.get(1).copied().unwrap_or(Signal::Zero);
-                vec![a.xnor(b)]
+                let mut count = 0;
+                for &inp in inputs {
+                    if inp.is_high() {
+                        count += 1;
+                    }
+                }
+                vec![if count % 2 == 0 {
+                    Signal::One
+                } else {
+                    Signal::Zero
+                }]
             }
 
             // 2. Fundamental I/O & Displays
