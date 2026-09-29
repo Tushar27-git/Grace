@@ -130,7 +130,9 @@ impl CanvasState {
         if let Some(wip) = &self.wire_in_progress {
             let start = wip.source_pos;
             let end = if let Some((endpoint, port_screen_pos)) = self.hovered_port {
-                if !endpoint.is_output {
+                if endpoint.is_output != wip.source_endpoint.is_output
+                    && endpoint.component_id != wip.source_endpoint.component_id
+                {
                     port_screen_pos
                 } else {
                     wip.current_cursor
@@ -138,7 +140,22 @@ impl CanvasState {
             } else {
                 wip.current_cursor
             };
-            self.draw_bezier_wire(&painter, start, end, Theme::ACCENT_PINK, 2.0 * self.zoom);
+            let wire_w = (2.5 * self.zoom).clamp(2.0, 4.0);
+            self.draw_bezier_wire(&painter, start, end, Theme::ACCENT_PINK, wire_w);
+            // Source terminal dot
+            painter.circle_filled(start, 4.5, Theme::ACCENT_PINK);
+            // Floating or snapped tip dot
+            painter.circle_filled(end, 4.5, Theme::ACCENT_PINK);
+
+            // If snapped to a valid target port, draw a bright glowing halo!
+            if end != wip.current_cursor {
+                painter.circle_stroke(end, 9.0, Stroke::new(2.5, Color32::WHITE));
+                painter.circle_filled(
+                    end,
+                    7.0,
+                    Theme::ACCENT_PINK.gamma_multiply(0.45),
+                );
+            }
         }
 
         // 7. Draw Components via Glyphs
@@ -195,19 +212,17 @@ impl CanvasState {
 
         // 10. Draw glowing snap indicator for hovered port
         if let Some((_endpoint, port_screen_pos)) = self.hovered_port {
-            let snap_r = match self.active_tool {
-                ActiveTool::Connect => 7.5,
-                _ => 6.0,
-            };
+            let is_wiring = self.wire_in_progress.is_some();
+            let snap_r = if is_wiring { 9.0 } else { 7.5 };
             painter.circle_stroke(
                 port_screen_pos,
                 snap_r,
-                Stroke::new(2.0, Theme::ACCENT_PINK),
+                Stroke::new(2.0, if is_wiring { Color32::WHITE } else { Theme::ACCENT_PINK }),
             );
             painter.circle_filled(
                 port_screen_pos,
                 (snap_r - 2.5).max(1.0),
-                Theme::ACCENT_PINK.gamma_multiply(0.4),
+                Theme::ACCENT_PINK.gamma_multiply(0.45),
             );
         }
 
@@ -348,50 +363,90 @@ impl CanvasState {
             _ => return,
         };
 
-        let base_threshold = 12.0;
-        let port_hit_threshold_screen = match self.active_tool {
-            ActiveTool::Connect => base_threshold * 1.05, // +5% in connection mode: 12.60px
-            ActiveTool::Normal => base_threshold * 1.02,  // +2% in normal view mode: 12.24px
-            ActiveTool::Marquee => 0.0,                   // Marquee only selects components
-            ActiveTool::Pan => 0.0,                       // Pan only moves canvas
+        // Generous magnetic snap radius:
+        // When wiring is in progress: 26.0 screen px (easy single-go locking)
+        // In Connect tool: 24.0 screen px
+        // In Normal tool: 20.0 screen px
+        let port_hit_threshold_screen = if self.wire_in_progress.is_some() {
+            26.0
+        } else {
+            match self.active_tool {
+                ActiveTool::Connect => 24.0,
+                ActiveTool::Normal => 20.0,
+                ActiveTool::Marquee => 0.0,
+                ActiveTool::Pan => 0.0,
+            }
         };
 
         if port_hit_threshold_screen > 0.0 {
-            // Check ports first (higher priority than component body)
+            // Find the CLOSEST valid port within the magnetic radius
+            let mut closest_port: Option<(PortEndpoint, Pos2, f32)> = None;
+
             for (id, comp) in &circuit.components {
                 // Inputs
                 for i in 0..comp.input_signals.len() {
+                    let ep = PortEndpoint {
+                        component_id: id,
+                        is_output: false,
+                        port_index: i,
+                    };
+                    // When wire is in progress, only snap to opposite ports on different components
+                    if let Some(wip) = &self.wire_in_progress {
+                        if ep.is_output == wip.source_endpoint.is_output
+                            || ep.component_id == wip.source_endpoint.component_id
+                        {
+                            continue;
+                        }
+                    }
+
                     let world_pos = comp.port_world_pos(false, i);
                     let screen_pos = self.canvas_to_screen(Pos2::new(world_pos.0, world_pos.1));
-                    if spos.distance(screen_pos) <= port_hit_threshold_screen {
-                        self.hovered_port = Some((
-                            PortEndpoint {
-                                component_id: id,
-                                is_output: false,
-                                port_index: i,
-                            },
-                            screen_pos,
-                        ));
-                        return;
+                    let d = spos.distance(screen_pos);
+                    if d <= port_hit_threshold_screen {
+                        let best_d = closest_port
+                            .as_ref()
+                            .map(|(_, _, cd)| *cd)
+                            .unwrap_or(f32::INFINITY);
+                        if d < best_d {
+                            closest_port = Some((ep, screen_pos, d));
+                        }
                     }
                 }
 
                 // Outputs
                 for i in 0..comp.output_signals.len() {
+                    let ep = PortEndpoint {
+                        component_id: id,
+                        is_output: true,
+                        port_index: i,
+                    };
+                    // When wire is in progress, only snap to opposite ports on different components
+                    if let Some(wip) = &self.wire_in_progress {
+                        if ep.is_output == wip.source_endpoint.is_output
+                            || ep.component_id == wip.source_endpoint.component_id
+                        {
+                            continue;
+                        }
+                    }
+
                     let world_pos = comp.port_world_pos(true, i);
                     let screen_pos = self.canvas_to_screen(Pos2::new(world_pos.0, world_pos.1));
-                    if spos.distance(screen_pos) <= port_hit_threshold_screen {
-                        self.hovered_port = Some((
-                            PortEndpoint {
-                                component_id: id,
-                                is_output: true,
-                                port_index: i,
-                            },
-                            screen_pos,
-                        ));
-                        return;
+                    let d = spos.distance(screen_pos);
+                    if d <= port_hit_threshold_screen {
+                        let best_d = closest_port
+                            .as_ref()
+                            .map(|(_, _, cd)| *cd)
+                            .unwrap_or(f32::INFINITY);
+                        if d < best_d {
+                            closest_port = Some((ep, screen_pos, d));
+                        }
                     }
                 }
+            }
+
+            if let Some((ep, sp, _)) = closest_port {
+                self.hovered_port = Some((ep, sp));
+                return;
             }
         }
 
@@ -405,6 +460,57 @@ impl CanvasState {
                 }
             }
         }
+    }
+
+    fn find_closest_compatible_port(
+        circuit: &Circuit,
+        canvas_to_screen: impl Fn(Pos2) -> Pos2,
+        source: PortEndpoint,
+        cursor_screen: Pos2,
+        max_dist: f32,
+    ) -> Option<PortEndpoint> {
+        let mut best: Option<(PortEndpoint, f32)> = None;
+        let look_for_output = !source.is_output;
+
+        for (id, comp) in &circuit.components {
+            if id == source.component_id {
+                continue;
+            }
+            if look_for_output {
+                for i in 0..comp.output_signals.len() {
+                    let wpos = comp.port_world_pos(true, i);
+                    let spos = canvas_to_screen(Pos2::new(wpos.0, wpos.1));
+                    let d = cursor_screen.distance(spos);
+                    if d <= max_dist && d < best.as_ref().map(|b| b.1).unwrap_or(f32::INFINITY) {
+                        best = Some((
+                            PortEndpoint {
+                                component_id: id,
+                                is_output: true,
+                                port_index: i,
+                            },
+                            d,
+                        ));
+                    }
+                }
+            } else {
+                for i in 0..comp.input_signals.len() {
+                    let wpos = comp.port_world_pos(false, i);
+                    let spos = canvas_to_screen(Pos2::new(wpos.0, wpos.1));
+                    let d = cursor_screen.distance(spos);
+                    if d <= max_dist && d < best.as_ref().map(|b| b.1).unwrap_or(f32::INFINITY) {
+                        best = Some((
+                            PortEndpoint {
+                                component_id: id,
+                                is_output: false,
+                                port_index: i,
+                            },
+                            d,
+                        ));
+                    }
+                }
+            }
+        }
+        best.map(|b| b.0)
     }
 
     fn handle_interactions(
@@ -455,18 +561,36 @@ impl CanvasState {
                 wip.current_cursor = spos;
             }
 
-            // If released or clicked
-            if response.drag_stopped_by(egui::PointerButton::Primary)
-                || (response.clicked_by(egui::PointerButton::Primary)
-                    && response.hover_pos() != Some(wip.source_pos))
-            {
-                if let Some((target_endpoint, _)) = self.hovered_port {
-                    // Check if one is output and one is input
-                    if wip.source_endpoint.is_output != target_endpoint.is_output {
-                        let (src, sink) = if wip.source_endpoint.is_output {
-                            (wip.source_endpoint, target_endpoint)
+            // If released or clicked (with movement)
+            let mouse_released = response.drag_stopped_by(egui::PointerButton::Primary);
+            let mouse_clicked = response.clicked_by(egui::PointerButton::Primary)
+                && wip.current_cursor.distance(wip.source_pos) > 6.0;
+
+            if mouse_released || mouse_clicked {
+                let source_endpoint = wip.source_endpoint;
+                let current_cursor = wip.current_cursor;
+                self.wire_in_progress = None; // Reset before querying self
+
+                // Find target port: from self.hovered_port, or fallback search for closest compatible port to cursor
+                let target = self.hovered_port.map(|(ep, _)| ep).or_else(|| {
+                    Self::find_closest_compatible_port(
+                        circuit,
+                        |p| self.canvas_to_screen(p),
+                        source_endpoint,
+                        current_cursor,
+                        28.0, // Generous release tolerance so fast drags connect in a single go
+                    )
+                });
+
+                if let Some(target_endpoint) = target {
+                    // Check if one is output and one is input on different components
+                    if source_endpoint.is_output != target_endpoint.is_output
+                        && source_endpoint.component_id != target_endpoint.component_id
+                    {
+                        let (src, sink) = if source_endpoint.is_output {
+                            (source_endpoint, target_endpoint)
                         } else {
-                            (target_endpoint, wip.source_endpoint)
+                            (target_endpoint, source_endpoint)
                         };
 
                         if circuit.connect_ports(src, sink).is_some() {
@@ -475,7 +599,7 @@ impl CanvasState {
                         }
                     }
                 }
-                self.wire_in_progress = None;
+                return;
             }
             return;
         }
@@ -557,10 +681,8 @@ impl CanvasState {
         // Tool 4: Normal Mode (Standard pointer & editing)
         // Dragging started
         if response.drag_started_by(egui::PointerButton::Primary) {
-            // Check if dragging started on an output port -> start wire
-            if let Some((port_endpoint, screen_pos)) = self.hovered_port
-                && port_endpoint.is_output
-            {
+            // Check if dragging started on ANY port (input OR output) -> start wire immediately
+            if let Some((port_endpoint, screen_pos)) = self.hovered_port {
                 self.wire_in_progress = Some(WireInProgress {
                     source_endpoint: port_endpoint,
                     source_pos: screen_pos,
@@ -941,21 +1063,103 @@ impl CanvasState {
 
                     ui.add_space(2.0);
 
-                    // Vertical Zoom Slider
-                    let old_zoom = self.zoom;
-                    let mut current_zoom = self.zoom;
-                    let slider = egui::Slider::new(&mut current_zoom, 0.25..=4.0)
-                        .vertical()
-                        .show_value(false);
+                    // Vertical Zoom Slider (100% horizontally centered, precision cyber fader)
+                    let (slider_rect, slider_resp) =
+                        ui.allocate_exact_size(Vec2::new(36.0, 72.0), Sense::click_and_drag());
+                    let slider_hov = slider_resp.hovered();
+                    let slider_drag = slider_resp.dragged();
 
-                    let slider_resp = ui.add_sized(Vec2::new(36.0, 68.0), slider);
-                    if slider_resp.changed() {
-                        let center = rect.center();
-                        let canvas_center = (center - self.pan) / old_zoom;
-                        self.pan = center - canvas_center * current_zoom;
-                        self.zoom = current_zoom;
+                    let cx = slider_rect.center().x;
+                    let y_top = slider_rect.min.y + 7.0;
+                    let y_bot = slider_rect.max.y - 7.0;
+
+                    // Track background: perfectly centered at cx
+                    let track_w = 6.0;
+                    let track_rect = Rect::from_min_max(
+                        pos2(cx - track_w * 0.5, y_top),
+                        pos2(cx + track_w * 0.5, y_bot),
+                    );
+                    ui.painter().rect_filled(
+                        track_rect,
+                        CornerRadius::same(3),
+                        Theme::BG_CANVAS_DARK,
+                    );
+                    ui.painter().rect_stroke(
+                        track_rect,
+                        CornerRadius::same(3),
+                        Stroke::new(1.0, Theme::ACCENT_PURPLE.gamma_multiply(0.6)),
+                        egui::StrokeKind::Inside,
+                    );
+
+                    // Interaction
+                    let old_zoom = self.zoom;
+                    if slider_resp.dragged() || slider_resp.clicked() {
+                        if let Some(pos) = slider_resp.interact_pointer_pos() {
+                            let t = ((y_bot - pos.y) / (y_bot - y_top)).clamp(0.0, 1.0);
+                            let new_zoom = 0.25 + t * (4.0 - 0.25);
+                            let center = rect.center();
+                            let canvas_center = (center - self.pan) / old_zoom;
+                            self.pan = center - canvas_center * new_zoom;
+                            self.zoom = new_zoom;
+                        }
                     }
-                    slider_resp.on_hover_text(format!("Zoom: {:.0}%", self.zoom * 100.0));
+
+                    // Normalized value t: 0.0 at bottom (0.25x), 1.0 at top (4.0x)
+                    let t = ((self.zoom - 0.25) / (4.0 - 0.25)).clamp(0.0, 1.0);
+                    let thumb_y = y_bot - t * (y_bot - y_top);
+
+                    // Active filled lower track (from bottom up to thumb)
+                    let active_track_rect = Rect::from_min_max(
+                        pos2(cx - track_w * 0.5, thumb_y),
+                        pos2(cx + track_w * 0.5, y_bot),
+                    );
+                    ui.painter().rect_filled(
+                        active_track_rect,
+                        CornerRadius::same(3),
+                        Theme::ACCENT_PINK.gamma_multiply(0.4),
+                    );
+
+                    // Thumb Handle: pill centered at (cx, thumb_y)
+                    let thumb_w = 24.0;
+                    let thumb_h = 13.0;
+                    let thumb_rect =
+                        Rect::from_center_size(pos2(cx, thumb_y), Vec2::new(thumb_w, thumb_h));
+                    let thumb_bg = if slider_drag {
+                        Theme::ACCENT_PINK
+                    } else if slider_hov {
+                        Theme::ACCENT_PURPLE
+                    } else {
+                        Theme::BG_PANEL_RAISED
+                    };
+                    let thumb_stroke = if slider_drag || slider_hov {
+                        Stroke::new(1.5, Color32::WHITE)
+                    } else {
+                        Stroke::new(1.2, Theme::ACCENT_PINK)
+                    };
+
+                    ui.painter().rect(
+                        thumb_rect,
+                        CornerRadius::same(6),
+                        thumb_bg,
+                        thumb_stroke,
+                        egui::StrokeKind::Inside,
+                    );
+
+                    // Center grip notch line
+                    let grip_col = if slider_drag || slider_hov {
+                        Color32::WHITE
+                    } else {
+                        Theme::TEXT_PRIMARY.gamma_multiply(0.8)
+                    };
+                    ui.painter().line_segment(
+                        [pos2(cx - 5.0, thumb_y), pos2(cx + 5.0, thumb_y)],
+                        Stroke::new(1.5, grip_col),
+                    );
+
+                    slider_resp.on_hover_text(format!(
+                        "Zoom: {:.0}%\nDrag to adjust zoom scale",
+                        self.zoom * 100.0
+                    ));
 
                     ui.add_space(2.0);
 
@@ -1084,21 +1288,26 @@ impl CanvasState {
                     let uc = undo_rect.center();
                     let up = ui.painter();
                     let us = Stroke::new(1.4, undo_col);
-                    // Curved undo arrow
+                    // Smooth curved arc for undo: bending up and to the left
                     up.line_segment(
-                        [pos2(uc.x + 4.5, uc.y + 4.0), pos2(uc.x + 3.0, uc.y - 3.5)],
+                        [pos2(uc.x + 5.0, uc.y + 4.0), pos2(uc.x + 4.5, uc.y - 1.0)],
                         us,
                     );
                     up.line_segment(
-                        [pos2(uc.x + 3.0, uc.y - 3.5), pos2(uc.x - 3.0, uc.y - 3.5)],
+                        [pos2(uc.x + 4.5, uc.y - 1.0), pos2(uc.x + 1.5, uc.y - 4.0)],
                         us,
                     );
                     up.line_segment(
-                        [pos2(uc.x - 4.5, uc.y - 3.5), pos2(uc.x - 1.5, uc.y - 6.5)],
+                        [pos2(uc.x + 1.5, uc.y - 4.0), pos2(uc.x - 3.5, uc.y - 4.0)],
+                        us,
+                    );
+                    // Arrowhead pointing down-left
+                    up.line_segment(
+                        [pos2(uc.x - 4.5, uc.y - 4.0), pos2(uc.x - 1.0, uc.y - 7.0)],
                         us,
                     );
                     up.line_segment(
-                        [pos2(uc.x - 4.5, uc.y - 3.5), pos2(uc.x - 1.5, uc.y - 0.5)],
+                        [pos2(uc.x - 4.5, uc.y - 4.0), pos2(uc.x - 1.0, uc.y - 1.0)],
                         us,
                     );
 
@@ -1138,21 +1347,26 @@ impl CanvasState {
                     let rc = redo_rect.center();
                     let rp = ui.painter();
                     let rs = Stroke::new(1.4, redo_col);
-                    // Curved redo arrow
+                    // Smooth curved arc for redo: bending up and to the right
                     rp.line_segment(
-                        [pos2(rc.x - 4.5, rc.y + 4.0), pos2(rc.x - 3.0, rc.y - 3.5)],
+                        [pos2(rc.x - 5.0, rc.y + 4.0), pos2(rc.x - 4.5, rc.y - 1.0)],
                         rs,
                     );
                     rp.line_segment(
-                        [pos2(rc.x - 3.0, rc.y - 3.5), pos2(rc.x + 3.0, rc.y - 3.5)],
+                        [pos2(rc.x - 4.5, rc.y - 1.0), pos2(rc.x - 1.5, rc.y - 4.0)],
                         rs,
                     );
                     rp.line_segment(
-                        [pos2(rc.x + 4.5, rc.y - 3.5), pos2(rc.x + 1.5, rc.y - 6.5)],
+                        [pos2(rc.x - 1.5, rc.y - 4.0), pos2(rc.x + 3.5, rc.y - 4.0)],
+                        rs,
+                    );
+                    // Arrowhead pointing down-right
+                    rp.line_segment(
+                        [pos2(rc.x + 4.5, rc.y - 4.0), pos2(rc.x + 1.0, rc.y - 7.0)],
                         rs,
                     );
                     rp.line_segment(
-                        [pos2(rc.x + 4.5, rc.y - 3.5), pos2(rc.x + 1.5, rc.y - 0.5)],
+                        [pos2(rc.x + 4.5, rc.y - 4.0), pos2(rc.x + 1.0, rc.y - 1.0)],
                         rs,
                     );
 
