@@ -285,7 +285,7 @@ impl GlyphRenderer {
             }
         }
 
-        // 4. Draw custom component label if set (e.g. "U1", "ENABLE", "G1")
+        // 4. Draw custom component label if set
         if !comp.label.is_empty() {
             let label_pos = local_to_screen(0.0, -hh - 8.0);
             painter.text(
@@ -293,7 +293,7 @@ impl GlyphRenderer {
                 egui::Align2::CENTER_BOTTOM,
                 &comp.label,
                 Theme::font_bold(10.5 * zoom.clamp(0.7, 1.4)),
-                Theme::TEXT_PRIMARY,
+                theme_mode.text_on_canvas(),
             );
         }
     }

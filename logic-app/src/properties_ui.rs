@@ -535,14 +535,14 @@ impl PropertiesUi {
 
         // 2. Custom Label
         ui.label(
-            RichText::new("LABEL / DESIGNATOR")
+            RichText::new("COMPONENT NAME")
                 .font(Theme::font_bold(11.0))
                 .color(Theme::ACCENT_PURPLE),
         );
         ui.add_space(2.0);
         let mut label = comp.label.clone();
         if ui
-            .add(egui::TextEdit::singleline(&mut label).hint_text("e.g. U1, ENABLE, G1"))
+            .add(egui::TextEdit::singleline(&mut label).hint_text("Enter name..."))
             .changed()
         {
             circuit.set_component_label(comp_id, label);

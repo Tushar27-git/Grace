@@ -1798,7 +1798,7 @@ impl CanvasState {
                     // Search input box
                     let prev_query = search.search_query.clone();
                     let text_edit = egui::TextEdit::singleline(&mut search.search_query)
-                        .hint_text("Search (e.g. AND, XOR, LED)...")
+                        .hint_text("Search...")
                         .font(Theme::font_bold(12.0))
                         .text_color(Theme::TEXT_PRIMARY)
                         .desired_width(ui.available_width());
