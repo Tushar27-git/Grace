@@ -2,12 +2,33 @@ use eframe::egui::Pos2;
 use logic_core::{ComponentId, NetId, PortEndpoint};
 use std::collections::HashSet;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ActiveTool {
     #[default]
-    Select,
-    Wire,
+    Normal,   // 4th: Normal view mode (+2% snap radius, full edit/move/wire)
+    Marquee,  // 1st: Marquee/selection tool (only selects components)
+    Connect,  // 2nd: Connection tool (+5% snap radius, dedicated wiring)
+    Pan,      // 3rd: Pan/move around tool (drag canvas)
+}
+
+impl ActiveTool {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ActiveTool::Normal => "Normal (View & Edit)",
+            ActiveTool::Marquee => "Marquee Select",
+            ActiveTool::Connect => "Connection (+5% Snap)",
+            ActiveTool::Pan => "Pan / Move Canvas",
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            ActiveTool::Normal => "↖",
+            ActiveTool::Marquee => "⬚",
+            ActiveTool::Connect => "⚡",
+            ActiveTool::Pan => "✋",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]

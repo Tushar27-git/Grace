@@ -3,6 +3,7 @@ use crate::hdl_ui::HdlUiState;
 use crate::palette::Palette;
 use crate::properties_ui::{LeftPanelTab, PropertiesUi};
 use crate::theme::{Theme, ThemeMode, apply_theme};
+use crate::tools::ActiveTool;
 use crate::verification_ui::{UniversalChallenge, VerificationUiState};
 use crate::waveform::WaveformState;
 use eframe::egui::{self, CentralPanel, Frame, Key, Panel, RichText, Ui};
@@ -29,6 +30,8 @@ pub struct LogicLabApp {
     pub theme_mode: ThemeMode,
     pub left_panel_tab: LeftPanelTab,
     pub show_properties_window: bool,
+    pub properties_expanded: bool,
+    pub last_selected_comp: Option<ComponentId>,
 }
 
 impl LogicLabApp {
@@ -54,6 +57,8 @@ impl LogicLabApp {
             theme_mode: ThemeMode::Dark,
             left_panel_tab: LeftPanelTab::Components,
             show_properties_window: true,
+            properties_expanded: false,
+            last_selected_comp: None,
         }
     }
 
@@ -430,6 +435,25 @@ impl LogicLabApp {
 
 impl eframe::App for LogicLabApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        // Track selection changes to open properties in collapsed manner when selecting a component
+        let current_selected_comp = if self.canvas.selection.selected_components.len() == 1 {
+            self.canvas
+                .selection
+                .selected_components
+                .iter()
+                .copied()
+                .next()
+        } else {
+            None
+        };
+
+        if current_selected_comp != self.last_selected_comp {
+            self.last_selected_comp = current_selected_comp;
+            if current_selected_comp.is_some() {
+                self.properties_expanded = false; // Opens in collapsed manner as requested!
+            }
+        }
+
         // Automatic periodic tick for Clock sources
         if self.clock_running && self.last_clock_tick.elapsed().as_millis() >= 500 {
             self.last_clock_tick = Instant::now();
@@ -469,6 +493,20 @@ impl eframe::App for LogicLabApp {
                 self.theme_mode.toggle();
             } else if !ctrl && i.key_pressed(Key::P) {
                 self.show_properties_window = !self.show_properties_window;
+            } else if !ctrl && !shift {
+                if i.key_pressed(Key::Num1) || i.key_pressed(Key::V) {
+                    self.canvas.active_tool = ActiveTool::Normal;
+                    self.status_message = "Tool: Normal (View & Edit)".to_string();
+                } else if i.key_pressed(Key::Num2) || i.key_pressed(Key::M) {
+                    self.canvas.active_tool = ActiveTool::Marquee;
+                    self.status_message = "Tool: Marquee (Select components only)".to_string();
+                } else if i.key_pressed(Key::Num3) || i.key_pressed(Key::C) {
+                    self.canvas.active_tool = ActiveTool::Connect;
+                    self.status_message = "Tool: Connection (+5% Snap)".to_string();
+                } else if i.key_pressed(Key::Num4) || i.key_pressed(Key::H) {
+                    self.canvas.active_tool = ActiveTool::Pan;
+                    self.status_message = "Tool: Pan Canvas".to_string();
+                }
             }
         });
 
@@ -845,7 +883,8 @@ impl eframe::App for LogicLabApp {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             RichText::new(format!(
-                                "Components: {} | Nets: {} | Zoom: {:.0}% | {}",
+                                "Tool: {} | Components: {} | Nets: {} | Zoom: {:.0}% | {}",
+                                self.canvas.active_tool.label(),
                                 self.circuit.components.len(),
                                 self.circuit.nets.len(),
                                 self.canvas.zoom * 100.0,
@@ -941,7 +980,12 @@ impl eframe::App for LogicLabApp {
                         Palette::show(ui, &mut self.selected_for_placement, &self.circuit);
                     }
                     LeftPanelTab::Properties => {
-                        if PropertiesUi::show_panel(ui, &mut self.circuit, selected_comp) {
+                        if PropertiesUi::show_panel(
+                            ui,
+                            &mut self.circuit,
+                            selected_comp,
+                            &mut self.properties_expanded,
+                        ) {
                             Simulator::settle(&mut self.circuit);
                             self.waveform.sample_circuit(&self.circuit);
                             self.push_undo();
@@ -983,6 +1027,7 @@ impl eframe::App for LogicLabApp {
                 &mut self.circuit,
                 selected_comp,
                 &mut self.show_properties_window,
+                &mut self.properties_expanded,
             )
         {
             Simulator::settle(&mut self.circuit);

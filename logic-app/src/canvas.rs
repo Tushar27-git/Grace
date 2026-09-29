@@ -2,7 +2,8 @@ use crate::glyphs::GlyphRenderer;
 use crate::theme::{Theme, ThemeMode};
 use crate::tools::{ActiveTool, MarqueeState, SelectionState, WireInProgress};
 use eframe::egui::{
-    self, Color32, CursorIcon, Key, Painter, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2,
+    self, Color32, CursorIcon, Key, Painter, Pos2, Rect, Response, RichText, Sense, Stroke, Ui,
+    Vec2,
 };
 use logic_core::{Circuit, ComponentId, GateKind, NetId, PortEndpoint, Signal, Simulator};
 
@@ -11,7 +12,6 @@ pub struct CanvasState {
     pub zoom: f32,
     pub show_grid: bool,
     pub snap_to_grid: bool,
-    #[allow(dead_code)]
     pub active_tool: ActiveTool,
     pub selection: SelectionState,
     pub wire_in_progress: Option<WireInProgress>,
@@ -30,7 +30,7 @@ impl Default for CanvasState {
             zoom: 1.0,
             show_grid: true,
             snap_to_grid: true,
-            active_tool: ActiveTool::Select,
+            active_tool: ActiveTool::Normal,
             selection: SelectionState::default(),
             wire_in_progress: None,
             marquee: None,
@@ -187,9 +187,41 @@ impl CanvasState {
             );
         }
 
-        // 10. Update cursor icon
+        // 10. Draw glowing snap indicator for hovered port
+        if let Some((_endpoint, port_screen_pos)) = self.hovered_port {
+            let snap_r = match self.active_tool {
+                ActiveTool::Connect => 7.5,
+                _ => 6.0,
+            };
+            painter.circle_stroke(
+                port_screen_pos,
+                snap_r,
+                Stroke::new(2.0, Theme::ACCENT_PINK),
+            );
+            painter.circle_filled(
+                port_screen_pos,
+                (snap_r - 2.5).max(1.0),
+                Theme::ACCENT_PINK.gamma_multiply(0.4),
+            );
+        }
+
+        // 11. Update cursor icon based on active tool
         if response.hovered() {
             if selected_for_placement.is_some() {
+                ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+            } else if self.active_tool == ActiveTool::Pan {
+                if response.dragged() {
+                    ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+                } else {
+                    ui.ctx().set_cursor_icon(CursorIcon::Grab);
+                }
+            } else if self.active_tool == ActiveTool::Connect {
+                if self.hovered_port.is_some() || self.wire_in_progress.is_some() {
+                    ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+                } else {
+                    ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+                }
+            } else if self.active_tool == ActiveTool::Marquee {
                 ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
             } else if self.wire_in_progress.is_some() {
                 ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
@@ -200,14 +232,21 @@ impl CanvasState {
             }
         }
 
+        // 12. Floating Right Toolbar Dock (Tools & Zoom Slider)
+        self.show_right_toolbar(ui.ctx(), rect);
+
         response_meta
     }
 
     fn handle_pan_zoom(&mut self, ui: &Ui, response: &Response) {
-        // Middle mouse drag or space+drag for pan
+        // Middle mouse drag, space+drag, or Pan Tool drag
         let space_down = ui.input(|i| i.key_down(Key::Space));
+        let pan_tool_drag = (self.active_tool == ActiveTool::Pan)
+            && response.dragged_by(egui::PointerButton::Primary);
+
         if (response.dragged_by(egui::PointerButton::Middle))
             || (space_down && response.dragged_by(egui::PointerButton::Primary))
+            || pan_tool_drag
         {
             self.pan += response.drag_delta();
         }
@@ -303,51 +342,61 @@ impl CanvasState {
             _ => return,
         };
 
-        let port_hit_threshold_screen = 12.0;
+        let base_threshold = 12.0;
+        let port_hit_threshold_screen = match self.active_tool {
+            ActiveTool::Connect => base_threshold * 1.05, // +5% in connection mode: 12.60px
+            ActiveTool::Normal => base_threshold * 1.02,  // +2% in normal view mode: 12.24px
+            ActiveTool::Marquee => 0.0,                   // Marquee only selects components
+            ActiveTool::Pan => 0.0,                       // Pan only moves canvas
+        };
 
-        // Check ports first (higher priority than component body)
-        for (id, comp) in &circuit.components {
-            // Inputs
-            for i in 0..comp.input_signals.len() {
-                let world_pos = comp.port_world_pos(false, i);
-                let screen_pos = self.canvas_to_screen(Pos2::new(world_pos.0, world_pos.1));
-                if spos.distance(screen_pos) <= port_hit_threshold_screen {
-                    self.hovered_port = Some((
-                        PortEndpoint {
-                            component_id: id,
-                            is_output: false,
-                            port_index: i,
-                        },
-                        screen_pos,
-                    ));
-                    return;
+        if port_hit_threshold_screen > 0.0 {
+            // Check ports first (higher priority than component body)
+            for (id, comp) in &circuit.components {
+                // Inputs
+                for i in 0..comp.input_signals.len() {
+                    let world_pos = comp.port_world_pos(false, i);
+                    let screen_pos = self.canvas_to_screen(Pos2::new(world_pos.0, world_pos.1));
+                    if spos.distance(screen_pos) <= port_hit_threshold_screen {
+                        self.hovered_port = Some((
+                            PortEndpoint {
+                                component_id: id,
+                                is_output: false,
+                                port_index: i,
+                            },
+                            screen_pos,
+                        ));
+                        return;
+                    }
                 }
-            }
 
-            // Outputs
-            for i in 0..comp.output_signals.len() {
-                let world_pos = comp.port_world_pos(true, i);
-                let screen_pos = self.canvas_to_screen(Pos2::new(world_pos.0, world_pos.1));
-                if spos.distance(screen_pos) <= port_hit_threshold_screen {
-                    self.hovered_port = Some((
-                        PortEndpoint {
-                            component_id: id,
-                            is_output: true,
-                            port_index: i,
-                        },
-                        screen_pos,
-                    ));
-                    return;
+                // Outputs
+                for i in 0..comp.output_signals.len() {
+                    let world_pos = comp.port_world_pos(true, i);
+                    let screen_pos = self.canvas_to_screen(Pos2::new(world_pos.0, world_pos.1));
+                    if spos.distance(screen_pos) <= port_hit_threshold_screen {
+                        self.hovered_port = Some((
+                            PortEndpoint {
+                                component_id: id,
+                                is_output: true,
+                                port_index: i,
+                            },
+                            screen_pos,
+                        ));
+                        return;
+                    }
                 }
             }
         }
 
-        // Check component bounding boxes
-        for (id, comp) in &circuit.components {
-            let (min, max) = comp.bounding_box();
-            if cpos.x >= min.0 && cpos.x <= max.0 && cpos.y >= min.1 && cpos.y <= max.1 {
-                self.hovered_component = Some(id);
-                return;
+        // Check component bounding boxes (for hover)
+        if self.active_tool != ActiveTool::Pan {
+            for (id, comp) in &circuit.components {
+                let (min, max) = comp.bounding_box();
+                if cpos.x >= min.0 && cpos.x <= max.0 && cpos.y >= min.1 && cpos.y <= max.1 {
+                    self.hovered_component = Some(id);
+                    return;
+                }
             }
         }
     }
@@ -364,11 +413,11 @@ impl CanvasState {
         let shift_down = ui.input(|i| i.modifiers.shift);
         let space_down = ui.input(|i| i.key_down(Key::Space));
 
-        if space_down {
-            return; // Space is reserved for panning
+        if space_down || self.active_tool == ActiveTool::Pan {
+            return; // Space or Pan tool is reserved for panning
         }
 
-        // Right-click or ESC cancels placement/wire
+        // Right-click or ESC cancels placement/wire/marquee
         if response.clicked_by(egui::PointerButton::Secondary)
             || ui.input(|i| i.key_pressed(Key::Escape))
         {
@@ -394,7 +443,7 @@ impl CanvasState {
             return;
         }
 
-        // Mode B: Interactive Wire Creation
+        // Mode B: Interactive Wire Creation (Connection Mode or Normal Mode wire drag)
         if let Some(wip) = &mut self.wire_in_progress {
             if let Some(spos) = response.hover_pos() {
                 wip.current_cursor = spos;
@@ -405,16 +454,19 @@ impl CanvasState {
                 || (response.clicked_by(egui::PointerButton::Primary)
                     && response.hover_pos() != Some(wip.source_pos))
             {
-                if let Some((target_endpoint, _)) = self.hovered_port
-                    && !target_endpoint.is_output
-                {
-                    // Connect output to input!
-                    if circuit
-                        .connect_ports(wip.source_endpoint, target_endpoint)
-                        .is_some()
-                    {
-                        Simulator::settle(circuit);
-                        meta.circuit_mutated = true;
+                if let Some((target_endpoint, _)) = self.hovered_port {
+                    // Check if one is output and one is input
+                    if wip.source_endpoint.is_output != target_endpoint.is_output {
+                        let (src, sink) = if wip.source_endpoint.is_output {
+                            (wip.source_endpoint, target_endpoint)
+                        } else {
+                            (target_endpoint, wip.source_endpoint)
+                        };
+
+                        if circuit.connect_ports(src, sink).is_some() {
+                            Simulator::settle(circuit);
+                            meta.circuit_mutated = true;
+                        }
                     }
                 }
                 self.wire_in_progress = None;
@@ -422,9 +474,84 @@ impl CanvasState {
             return;
         }
 
-        // Mode C: Normal Tool (Select, Move, Wire Start, Toggle Switch Click)
+        // Tool 1: Marquee / Selection Tool ("only select the component")
+        if self.active_tool == ActiveTool::Marquee {
+            if response.drag_started_by(egui::PointerButton::Primary) {
+                if let Some(spos) = response.hover_pos() {
+                    if !shift_down {
+                        self.selection.clear();
+                    }
+                    self.marquee = Some(MarqueeState {
+                        start: spos,
+                        current: spos,
+                    });
+                }
+            }
+
+            if let Some(marquee) = &mut self.marquee {
+                if let Some(spos) = response.hover_pos() {
+                    marquee.current = spos;
+                }
+
+                if response.drag_stopped_by(egui::PointerButton::Primary) {
+                    let min_s = Pos2::new(
+                        marquee.start.x.min(marquee.current.x),
+                        marquee.start.y.min(marquee.current.y),
+                    );
+                    let max_s = Pos2::new(
+                        marquee.start.x.max(marquee.current.x),
+                        marquee.start.y.max(marquee.current.y),
+                    );
+                    let min_c = self.screen_to_canvas(min_s);
+                    let max_c = self.screen_to_canvas(max_s);
+
+                    for (id, comp) in &circuit.components {
+                        if comp.pos.0 >= min_c.x
+                            && comp.pos.0 <= max_c.x
+                            && comp.pos.1 >= min_c.y
+                            && comp.pos.1 <= max_c.y
+                        {
+                            self.selection.selected_components.insert(id);
+                        }
+                    }
+                    self.marquee = None;
+                }
+            }
+
+            if response.clicked_by(egui::PointerButton::Primary) && self.marquee.is_none() {
+                if let Some(comp_id) = self.hovered_component {
+                    if shift_down {
+                        self.selection.toggle_component(comp_id);
+                    } else {
+                        self.selection.select_single(comp_id);
+                    }
+                } else if !shift_down {
+                    self.selection.clear();
+                }
+            }
+            return;
+        }
+
+        // Tool 2: Connection Tool (dedicated wiring with +5% snap radius)
+        if self.active_tool == ActiveTool::Connect {
+            if response.drag_started_by(egui::PointerButton::Primary)
+                || response.clicked_by(egui::PointerButton::Primary)
+            {
+                if let Some((port_endpoint, screen_pos)) = self.hovered_port {
+                    self.wire_in_progress = Some(WireInProgress {
+                        source_endpoint: port_endpoint,
+                        source_pos: screen_pos,
+                        current_cursor: screen_pos,
+                    });
+                }
+            }
+            return;
+        }
+
+        // Tool 4: Normal Mode (Standard pointer & editing)
+        // Dragging started
         if response.drag_started_by(egui::PointerButton::Primary) {
-            // Check if dragging started on an output port -> start wire tool
+            // Check if dragging started on an output port -> start wire
             if let Some((port_endpoint, screen_pos)) = self.hovered_port
                 && port_endpoint.is_output
             {
@@ -466,7 +593,7 @@ impl CanvasState {
             }
         }
 
-        // Moving components
+        // Moving components (Normal mode only)
         if self.is_dragging_components && response.dragged_by(egui::PointerButton::Primary) {
             let delta_screen = response.drag_delta();
             let delta_canvas = delta_screen / self.zoom;
@@ -490,14 +617,13 @@ impl CanvasState {
             meta.circuit_mutated = true;
         }
 
-        // Marquee dragging
+        // Marquee dragging (Normal mode)
         if let Some(marquee) = &mut self.marquee {
             if let Some(spos) = response.hover_pos() {
                 marquee.current = spos;
             }
 
             if response.drag_stopped_by(egui::PointerButton::Primary) {
-                // Select all components inside marquee box
                 let min_s = Pos2::new(
                     marquee.start.x.min(marquee.current.x),
                     marquee.start.y.min(marquee.current.y),
@@ -522,13 +648,12 @@ impl CanvasState {
             }
         }
 
-        // Single Click: Toggle Switch flip or Select component
+        // Single Click: Toggle Switch flip or Select component (Normal mode)
         if response.clicked_by(egui::PointerButton::Primary) && !self.is_dragging_components {
             if let Some(comp_id) = self.hovered_component {
                 if let Some(comp) = circuit.components.get_mut(comp_id)
                     && (comp.kind == GateKind::ToggleSwitch || comp.kind == GateKind::BitSwitch)
                 {
-                    // User clicked toggle switch -> flip and simulate!
                     comp.state_flag = !comp.state_flag;
                     Simulator::settle(circuit);
                     meta.circuit_mutated = true;
@@ -544,6 +669,172 @@ impl CanvasState {
                 self.selection.clear();
             }
         }
+    }
+
+    fn show_right_toolbar(&mut self, ctx: &egui::Context, rect: Rect) {
+        let mut dock_frame = Theme::glass_modal();
+        dock_frame.inner_margin = egui::Margin::symmetric(6, 8);
+        dock_frame.corner_radius = egui::CornerRadius::same(8);
+
+        egui::Window::new("canvas_right_dock")
+            .title_bar(false)
+            .resizable(false)
+            .collapsible(false)
+            .frame(dock_frame)
+            .anchor(egui::Align2::RIGHT_CENTER, egui::vec2(-16.0, 20.0))
+            .show(ctx, |ui| {
+                ui.set_width(42.0);
+                ui.vertical_centered(|ui| {
+                    // Tool Buttons
+                    let tools = [
+                        (
+                            ActiveTool::Normal,
+                            "Normal Mode (1 / V)\nSelect, move, switch toggle & wire.\nPort snap radius +2%",
+                        ),
+                        (
+                            ActiveTool::Marquee,
+                            "Marquee Selection Tool (2 / M)\nDrag on canvas to box-select components only",
+                        ),
+                        (
+                            ActiveTool::Connect,
+                            "Connection Tool (3 / C)\nDedicated wire creation tool.\nPort snap radius +5%",
+                        ),
+                        (
+                            ActiveTool::Pan,
+                            "Pan / Move Canvas (4 / H)\nClick and drag anywhere to move view",
+                        ),
+                    ];
+
+                    for (tool, tooltip) in tools {
+                        let is_active = self.active_tool == tool;
+                        let btn_text = RichText::new(tool.icon())
+                            .font(Theme::font_bold(16.0))
+                            .color(if is_active {
+                                Theme::ACCENT_PINK
+                            } else {
+                                Theme::TEXT_PRIMARY
+                            });
+
+                        let btn = egui::Button::new(btn_text)
+                            .min_size(Vec2::new(36.0, 32.0))
+                            .fill(if is_active {
+                                Theme::ACCENT_PURPLE.gamma_multiply(0.45)
+                            } else {
+                                Theme::BG_PANEL
+                            })
+                            .stroke(Stroke::new(
+                                if is_active { 1.5 } else { 1.0 },
+                                if is_active {
+                                    Theme::ACCENT_PINK
+                                } else {
+                                    Theme::ACCENT_PURPLE.gamma_multiply(0.4)
+                                },
+                            ));
+
+                        if ui.add(btn).on_hover_text(tooltip).clicked() {
+                            self.active_tool = tool;
+                            if tool != ActiveTool::Connect {
+                                self.wire_in_progress = None;
+                            }
+                            if tool != ActiveTool::Marquee {
+                                self.marquee = None;
+                            }
+                        }
+                        ui.add_space(2.0);
+                    }
+
+                    ui.add_space(4.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    // Zoom Controls
+                    // [+] button
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new("+")
+                                    .font(Theme::font_bold(14.0))
+                                    .color(Theme::TEXT_PRIMARY),
+                            )
+                            .min_size(Vec2::new(36.0, 24.0)),
+                        )
+                        .on_hover_text("Zoom In (+10%)")
+                        .clicked()
+                    {
+                        let old_zoom = self.zoom;
+                        let new_zoom = (old_zoom * 1.1).clamp(0.25, 4.0);
+                        let center = rect.center();
+                        let canvas_center = (center - self.pan) / old_zoom;
+                        self.pan = center - canvas_center * new_zoom;
+                        self.zoom = new_zoom;
+                    }
+
+                    ui.add_space(2.0);
+
+                    // Vertical Zoom Slider
+                    let old_zoom = self.zoom;
+                    let mut current_zoom = self.zoom;
+                    let slider = egui::Slider::new(&mut current_zoom, 0.25..=4.0)
+                        .vertical()
+                        .show_value(false);
+
+                    let slider_resp = ui.add_sized(Vec2::new(36.0, 70.0), slider);
+                    if slider_resp.changed() {
+                        let center = rect.center();
+                        let canvas_center = (center - self.pan) / old_zoom;
+                        self.pan = center - canvas_center * current_zoom;
+                        self.zoom = current_zoom;
+                    }
+                    slider_resp.on_hover_text(format!("Zoom: {:.0}%", self.zoom * 100.0));
+
+                    ui.add_space(2.0);
+
+                    // [-] button
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new("-")
+                                    .font(Theme::font_bold(14.0))
+                                    .color(Theme::TEXT_PRIMARY),
+                            )
+                            .min_size(Vec2::new(36.0, 24.0)),
+                        )
+                        .on_hover_text("Zoom Out (-10%)")
+                        .clicked()
+                    {
+                        let old_zoom = self.zoom;
+                        let new_zoom = (old_zoom * 0.9).clamp(0.25, 4.0);
+                        let center = rect.center();
+                        let canvas_center = (center - self.pan) / old_zoom;
+                        self.pan = center - canvas_center * new_zoom;
+                        self.zoom = new_zoom;
+                    }
+
+                    ui.add_space(2.0);
+
+                    // Percentage Reset button
+                    let zoom_pct = format!("{:.0}%", self.zoom * 100.0);
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new(zoom_pct)
+                                    .font(Theme::font_bold(10.0))
+                                    .color(Theme::ACCENT_PINK),
+                            )
+                            .min_size(Vec2::new(36.0, 20.0)),
+                        )
+                        .on_hover_text("Click to reset zoom to 100%")
+                        .clicked()
+                    {
+                        let old_zoom = self.zoom;
+                        let new_zoom = 1.0;
+                        let center = rect.center();
+                        let canvas_center = (center - self.pan) / old_zoom;
+                        self.pan = center - canvas_center * new_zoom;
+                        self.zoom = new_zoom;
+                    }
+                });
+            });
     }
 
     fn draw_wires(&self, painter: &Painter, circuit: &Circuit, theme_mode: ThemeMode) {
