@@ -1003,6 +1003,18 @@ impl eframe::App for LogicLabApp {
                 &mut self.selected_for_placement,
                 self.theme_mode,
             );
+            if canvas_res.trigger_undo {
+                self.undo();
+                self.waveform.sample_circuit(&self.circuit);
+            }
+            if canvas_res.trigger_redo {
+                self.redo();
+                self.waveform.sample_circuit(&self.circuit);
+            }
+            if canvas_res.trigger_delete {
+                self.delete_selected();
+                self.waveform.sample_circuit(&self.circuit);
+            }
             if canvas_res.placed_component || canvas_res.circuit_mutated {
                 self.waveform.sample_circuit(&self.circuit);
                 self.push_undo();

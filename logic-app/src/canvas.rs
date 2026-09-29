@@ -2,8 +2,8 @@ use crate::glyphs::GlyphRenderer;
 use crate::theme::{Theme, ThemeMode};
 use crate::tools::{ActiveTool, MarqueeState, SelectionState, WireInProgress};
 use eframe::egui::{
-    self, Color32, CornerRadius, CursorIcon, Key, Painter, Pos2, Rect, Response, RichText, Sense,
-    Stroke, Ui, Vec2, pos2,
+    self, Color32, CornerRadius, CursorIcon, Key, Painter, Pos2, Rect, Response, Sense, Stroke,
+    Ui, Vec2, pos2,
 };
 use logic_core::{Circuit, ComponentId, GateKind, NetId, PortEndpoint, Signal, Simulator};
 
@@ -74,6 +74,9 @@ impl CanvasState {
 pub struct CanvasResponse {
     pub circuit_mutated: bool,
     pub placed_component: bool,
+    pub trigger_undo: bool,
+    pub trigger_redo: bool,
+    pub trigger_delete: bool,
 }
 
 impl CanvasState {
@@ -87,6 +90,9 @@ impl CanvasState {
         let mut response_meta = CanvasResponse {
             circuit_mutated: false,
             placed_component: false,
+            trigger_undo: false,
+            trigger_redo: false,
+            trigger_delete: false,
         };
 
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
@@ -232,8 +238,8 @@ impl CanvasState {
             }
         }
 
-        // 12. Floating Right Toolbar Dock (Tools & Zoom Slider)
-        self.show_right_toolbar(ui.ctx(), rect);
+        // 12. Floating Right Toolbar Dock (Tools & Zoom Slider & Actions)
+        self.show_right_toolbar(ui.ctx(), rect, &mut response_meta);
 
         response_meta
     }
@@ -671,9 +677,14 @@ impl CanvasState {
         }
     }
 
-    fn show_right_toolbar(&mut self, ctx: &egui::Context, rect: Rect) {
+    fn show_right_toolbar(
+        &mut self,
+        ctx: &egui::Context,
+        rect: Rect,
+        meta: &mut CanvasResponse,
+    ) {
         let mut dock_frame = Theme::glass_modal();
-        dock_frame.inner_margin = egui::Margin::symmetric(6, 8);
+        dock_frame.inner_margin = egui::Margin::symmetric(4, 6);
         dock_frame.corner_radius = egui::CornerRadius::same(8);
 
         egui::Window::new("canvas_right_dock")
@@ -681,9 +692,11 @@ impl CanvasState {
             .resizable(false)
             .collapsible(false)
             .frame(dock_frame)
-            .anchor(egui::Align2::RIGHT_CENTER, egui::vec2(-16.0, 20.0))
+            .anchor(egui::Align2::RIGHT_CENTER, egui::vec2(-14.0, 10.0))
             .show(ctx, |ui| {
-                ui.set_width(42.0);
+                ui.set_width(40.0);
+                ui.set_min_width(40.0);
+                ui.set_max_width(40.0);
                 ui.vertical_centered(|ui| {
                     // Tool Buttons
                     let tools = [
@@ -879,24 +892,45 @@ impl CanvasState {
                         ui.add_space(2.0);
                     }
 
-                    ui.add_space(4.0);
+                    ui.add_space(3.0);
                     ui.separator();
-                    ui.add_space(4.0);
+                    ui.add_space(3.0);
 
                     // Zoom Controls
                     // [+] button
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new("+")
-                                    .font(Theme::font_bold(14.0))
-                                    .color(Theme::TEXT_PRIMARY),
-                            )
-                            .min_size(Vec2::new(36.0, 24.0)),
-                        )
-                        .on_hover_text("Zoom In (+10%)")
-                        .clicked()
-                    {
+                    let (plus_rect, plus_resp) =
+                        ui.allocate_exact_size(Vec2::new(36.0, 22.0), Sense::click());
+                    let plus_hov = plus_resp.hovered();
+                    ui.painter().rect(
+                        plus_rect,
+                        CornerRadius::same(4),
+                        if plus_hov {
+                            Theme::BG_PANEL_RAISED
+                        } else {
+                            Theme::BG_PANEL
+                        },
+                        Stroke::new(
+                            1.0,
+                            if plus_hov {
+                                Theme::ACCENT_PINK
+                            } else {
+                                Theme::ACCENT_PURPLE.gamma_multiply(0.4)
+                            },
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                    ui.painter().text(
+                        plus_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "+",
+                        Theme::font_bold(14.0),
+                        if plus_hov {
+                            Color32::WHITE
+                        } else {
+                            Theme::TEXT_PRIMARY
+                        },
+                    );
+                    if plus_resp.on_hover_text("Zoom In (+10%)").clicked() {
                         let old_zoom = self.zoom;
                         let new_zoom = (old_zoom * 1.1).clamp(0.25, 4.0);
                         let center = rect.center();
@@ -914,7 +948,7 @@ impl CanvasState {
                         .vertical()
                         .show_value(false);
 
-                    let slider_resp = ui.add_sized(Vec2::new(36.0, 70.0), slider);
+                    let slider_resp = ui.add_sized(Vec2::new(36.0, 68.0), slider);
                     if slider_resp.changed() {
                         let center = rect.center();
                         let canvas_center = (center - self.pan) / old_zoom;
@@ -926,18 +960,39 @@ impl CanvasState {
                     ui.add_space(2.0);
 
                     // [-] button
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new("-")
-                                    .font(Theme::font_bold(14.0))
-                                    .color(Theme::TEXT_PRIMARY),
-                            )
-                            .min_size(Vec2::new(36.0, 24.0)),
-                        )
-                        .on_hover_text("Zoom Out (-10%)")
-                        .clicked()
-                    {
+                    let (minus_rect, minus_resp) =
+                        ui.allocate_exact_size(Vec2::new(36.0, 22.0), Sense::click());
+                    let minus_hov = minus_resp.hovered();
+                    ui.painter().rect(
+                        minus_rect,
+                        CornerRadius::same(4),
+                        if minus_hov {
+                            Theme::BG_PANEL_RAISED
+                        } else {
+                            Theme::BG_PANEL
+                        },
+                        Stroke::new(
+                            1.0,
+                            if minus_hov {
+                                Theme::ACCENT_PINK
+                            } else {
+                                Theme::ACCENT_PURPLE.gamma_multiply(0.4)
+                            },
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                    ui.painter().text(
+                        minus_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "-",
+                        Theme::font_bold(14.0),
+                        if minus_hov {
+                            Color32::WHITE
+                        } else {
+                            Theme::TEXT_PRIMARY
+                        },
+                    );
+                    if minus_resp.on_hover_text("Zoom Out (-10%)").clicked() {
                         let old_zoom = self.zoom;
                         let new_zoom = (old_zoom * 0.9).clamp(0.25, 4.0);
                         let center = rect.center();
@@ -948,18 +1003,42 @@ impl CanvasState {
 
                     ui.add_space(2.0);
 
-                    // Percentage Reset button
+                    // Fixed-size single-line percentage box (No line-wrapping, strictly 36x20px, zero jitter)
+                    let (pct_rect, pct_resp) =
+                        ui.allocate_exact_size(Vec2::new(36.0, 20.0), Sense::click());
+                    let pct_hov = pct_resp.hovered();
+                    ui.painter().rect(
+                        pct_rect,
+                        CornerRadius::same(4),
+                        if pct_hov {
+                            Theme::ACCENT_PURPLE.gamma_multiply(0.45)
+                        } else {
+                            Theme::BG_PANEL
+                        },
+                        Stroke::new(
+                            1.0,
+                            if pct_hov {
+                                Theme::ACCENT_PINK
+                            } else {
+                                Theme::ACCENT_PURPLE.gamma_multiply(0.4)
+                            },
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
                     let zoom_pct = format!("{:.0}%", self.zoom * 100.0);
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new(zoom_pct)
-                                    .font(Theme::font_bold(10.0))
-                                    .color(Theme::ACCENT_PINK),
-                            )
-                            .min_size(Vec2::new(36.0, 20.0)),
-                        )
-                        .on_hover_text("Click to reset zoom to 100%")
+                    ui.painter().text(
+                        pct_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        &zoom_pct,
+                        Theme::font_bold(9.5),
+                        if pct_hov {
+                            Color32::WHITE
+                        } else {
+                            Theme::ACCENT_PINK
+                        },
+                    );
+                    if pct_resp
+                        .on_hover_text(format!("Zoom: {}\nClick to reset to 100%", zoom_pct))
                         .clicked()
                     {
                         let old_zoom = self.zoom;
@@ -968,6 +1047,199 @@ impl CanvasState {
                         let canvas_center = (center - self.pan) / old_zoom;
                         self.pan = center - canvas_center * new_zoom;
                         self.zoom = new_zoom;
+                    }
+
+                    ui.add_space(3.0);
+                    ui.separator();
+                    ui.add_space(3.0);
+
+                    // Actions: Undo, Redo, Delete
+                    // 1. Undo Button (Ctrl+Z)
+                    let (undo_rect, undo_resp) =
+                        ui.allocate_exact_size(Vec2::new(36.0, 28.0), Sense::click());
+                    let undo_hov = undo_resp.hovered();
+                    ui.painter().rect(
+                        undo_rect,
+                        CornerRadius::same(5),
+                        if undo_hov {
+                            Theme::BG_PANEL_RAISED
+                        } else {
+                            Theme::BG_PANEL
+                        },
+                        Stroke::new(
+                            1.0,
+                            if undo_hov {
+                                Theme::ACCENT_PINK
+                            } else {
+                                Theme::ACCENT_PURPLE.gamma_multiply(0.4)
+                            },
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                    let undo_col = if undo_hov {
+                        Color32::WHITE
+                    } else {
+                        Theme::TEXT_PRIMARY
+                    };
+                    let uc = undo_rect.center();
+                    let up = ui.painter();
+                    let us = Stroke::new(1.4, undo_col);
+                    // Curved undo arrow
+                    up.line_segment(
+                        [pos2(uc.x + 4.5, uc.y + 4.0), pos2(uc.x + 3.0, uc.y - 3.5)],
+                        us,
+                    );
+                    up.line_segment(
+                        [pos2(uc.x + 3.0, uc.y - 3.5), pos2(uc.x - 3.0, uc.y - 3.5)],
+                        us,
+                    );
+                    up.line_segment(
+                        [pos2(uc.x - 4.5, uc.y - 3.5), pos2(uc.x - 1.5, uc.y - 6.5)],
+                        us,
+                    );
+                    up.line_segment(
+                        [pos2(uc.x - 4.5, uc.y - 3.5), pos2(uc.x - 1.5, uc.y - 0.5)],
+                        us,
+                    );
+
+                    if undo_resp.on_hover_text("Undo (Ctrl+Z)").clicked() {
+                        meta.trigger_undo = true;
+                    }
+
+                    ui.add_space(2.0);
+
+                    // 2. Redo Button (Ctrl+Y)
+                    let (redo_rect, redo_resp) =
+                        ui.allocate_exact_size(Vec2::new(36.0, 28.0), Sense::click());
+                    let redo_hov = redo_resp.hovered();
+                    ui.painter().rect(
+                        redo_rect,
+                        CornerRadius::same(5),
+                        if redo_hov {
+                            Theme::BG_PANEL_RAISED
+                        } else {
+                            Theme::BG_PANEL
+                        },
+                        Stroke::new(
+                            1.0,
+                            if redo_hov {
+                                Theme::ACCENT_PINK
+                            } else {
+                                Theme::ACCENT_PURPLE.gamma_multiply(0.4)
+                            },
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                    let redo_col = if redo_hov {
+                        Color32::WHITE
+                    } else {
+                        Theme::TEXT_PRIMARY
+                    };
+                    let rc = redo_rect.center();
+                    let rp = ui.painter();
+                    let rs = Stroke::new(1.4, redo_col);
+                    // Curved redo arrow
+                    rp.line_segment(
+                        [pos2(rc.x - 4.5, rc.y + 4.0), pos2(rc.x - 3.0, rc.y - 3.5)],
+                        rs,
+                    );
+                    rp.line_segment(
+                        [pos2(rc.x - 3.0, rc.y - 3.5), pos2(rc.x + 3.0, rc.y - 3.5)],
+                        rs,
+                    );
+                    rp.line_segment(
+                        [pos2(rc.x + 4.5, rc.y - 3.5), pos2(rc.x + 1.5, rc.y - 6.5)],
+                        rs,
+                    );
+                    rp.line_segment(
+                        [pos2(rc.x + 4.5, rc.y - 3.5), pos2(rc.x + 1.5, rc.y - 0.5)],
+                        rs,
+                    );
+
+                    if redo_resp.on_hover_text("Redo (Ctrl+Y)").clicked() {
+                        meta.trigger_redo = true;
+                    }
+
+                    ui.add_space(2.0);
+
+                    // 3. Delete Button (Del)
+                    let has_sel = !self.selection.is_empty();
+                    let (del_rect, del_resp) =
+                        ui.allocate_exact_size(Vec2::new(36.0, 28.0), Sense::click());
+                    let del_hov = del_resp.hovered() && has_sel;
+                    let del_bg = if del_hov {
+                        Theme::ACCENT_RED.gamma_multiply(0.35)
+                    } else if has_sel {
+                        Theme::BG_PANEL
+                    } else {
+                        Theme::BG_PANEL.gamma_multiply(0.6)
+                    };
+                    let del_stroke = if del_hov {
+                        Stroke::new(1.5, Theme::ACCENT_RED)
+                    } else if has_sel {
+                        Stroke::new(1.0, Theme::ACCENT_RED.gamma_multiply(0.7))
+                    } else {
+                        Stroke::new(1.0, Theme::ACCENT_PURPLE.gamma_multiply(0.25))
+                    };
+                    ui.painter().rect(
+                        del_rect,
+                        CornerRadius::same(5),
+                        del_bg,
+                        del_stroke,
+                        egui::StrokeKind::Inside,
+                    );
+                    let del_col = if del_hov {
+                        Color32::WHITE
+                    } else if has_sel {
+                        Theme::ACCENT_RED
+                    } else {
+                        Theme::TEXT_MUTED.gamma_multiply(0.4)
+                    };
+                    let dc = del_rect.center();
+                    let dp = ui.painter();
+                    let ds = Stroke::new(1.3, del_col);
+                    // Trash can: Lid
+                    dp.line_segment(
+                        [pos2(dc.x - 6.0, dc.y - 3.0), pos2(dc.x + 6.0, dc.y - 3.0)],
+                        ds,
+                    );
+                    dp.line_segment(
+                        [pos2(dc.x - 2.0, dc.y - 5.0), pos2(dc.x + 2.0, dc.y - 5.0)],
+                        ds,
+                    );
+                    // Body
+                    dp.line_segment(
+                        [pos2(dc.x - 4.5, dc.y - 1.5), pos2(dc.x - 3.5, dc.y + 6.0)],
+                        ds,
+                    );
+                    dp.line_segment(
+                        [pos2(dc.x - 3.5, dc.y + 6.0), pos2(dc.x + 3.5, dc.y + 6.0)],
+                        ds,
+                    );
+                    dp.line_segment(
+                        [pos2(dc.x + 3.5, dc.y + 6.0), pos2(dc.x + 4.5, dc.y - 1.5)],
+                        ds,
+                    );
+                    // Internal ribs
+                    dp.line_segment(
+                        [pos2(dc.x - 1.5, dc.y), pos2(dc.x - 1.2, dc.y + 4.5)],
+                        ds,
+                    );
+                    dp.line_segment(
+                        [pos2(dc.x + 1.5, dc.y), pos2(dc.x + 1.2, dc.y + 4.5)],
+                        ds,
+                    );
+
+                    if del_resp
+                        .on_hover_text(if has_sel {
+                            "Delete Selected (Del)"
+                        } else {
+                            "Delete (No components selected)"
+                        })
+                        .clicked()
+                        && has_sel
+                    {
+                        meta.trigger_delete = true;
                     }
                 });
             });
