@@ -191,13 +191,32 @@ pub fn setup_custom_fonts(ctx: &egui::Context) {
         .or_default()
         .insert(0, "SpaceGrotesk-Regular".to_owned());
 
+    let default_fallbacks = fonts
+        .families
+        .get(&egui::FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+
+    let mut bold_family = vec!["SpaceGrotesk-Bold".to_owned()];
+    for f in &default_fallbacks {
+        if !bold_family.contains(f) {
+            bold_family.push(f.clone());
+        }
+    }
     fonts.families.insert(
         egui::FontFamily::Name("SpaceGrotesk-Bold".into()),
-        vec!["SpaceGrotesk-Bold".to_owned()],
+        bold_family,
     );
+
+    let mut medium_family = vec!["SpaceGrotesk-Medium".to_owned()];
+    for f in &default_fallbacks {
+        if !medium_family.contains(f) {
+            medium_family.push(f.clone());
+        }
+    }
     fonts.families.insert(
         egui::FontFamily::Name("SpaceGrotesk-Medium".into()),
-        vec!["SpaceGrotesk-Medium".to_owned()],
+        medium_family,
     );
 
     ctx.set_fonts(fonts);

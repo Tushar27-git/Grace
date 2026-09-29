@@ -21,12 +21,13 @@ impl ActiveTool {
         }
     }
 
+    #[allow(dead_code)]
     pub fn icon(&self) -> &'static str {
         match self {
-            ActiveTool::Normal => "↖",
-            ActiveTool::Marquee => "⬚",
-            ActiveTool::Connect => "⚡",
-            ActiveTool::Pan => "✋",
+            ActiveTool::Normal => "PTR",
+            ActiveTool::Marquee => "BOX",
+            ActiveTool::Connect => "WIRE",
+            ActiveTool::Pan => "PAN",
         }
     }
 }

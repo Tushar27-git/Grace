@@ -144,7 +144,7 @@ impl LogicLabApp {
             }
         }
         Simulator::settle(&mut self.circuit);
-        self.status_message = "Rotated 90°".to_string();
+        self.status_message = "Rotated 90 deg".to_string();
     }
 
     fn duplicate_selected(&mut self) {
@@ -952,7 +952,7 @@ impl eframe::App for LogicLabApp {
                     }
 
                     let prop_label = if sel_count == 1 {
-                        "PROPERTIES •"
+                        "PROPERTIES *"
                     } else {
                         "PROPERTIES"
                     };

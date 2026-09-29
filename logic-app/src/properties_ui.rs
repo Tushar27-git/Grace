@@ -8,6 +8,102 @@ pub enum LeftPanelTab {
     Properties,
 }
 
+fn draw_triangle_arrow_button(
+    ui: &mut egui::Ui,
+    pointing_down: bool,
+    tooltip: &str,
+) -> bool {
+    let size = egui::vec2(24.0, 22.0);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let hovered = resp.hovered();
+
+    let bg_color = if hovered {
+        Theme::ACCENT_PURPLE.gamma_multiply(0.6)
+    } else {
+        Theme::ACCENT_PURPLE.gamma_multiply(0.35)
+    };
+    let stroke_color = if hovered {
+        Theme::ACCENT_PINK
+    } else {
+        Theme::ACCENT_PINK.gamma_multiply(0.8)
+    };
+
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(4),
+        bg_color,
+        Stroke::new(1.0, stroke_color),
+        egui::StrokeKind::Inside,
+    );
+
+    let c = rect.center();
+    let color = if hovered {
+        egui::Color32::WHITE
+    } else {
+        Theme::ACCENT_PINK
+    };
+
+    if pointing_down {
+        let p1 = pos2(c.x - 5.0, c.y - 2.5);
+        let p2 = pos2(c.x + 5.0, c.y - 2.5);
+        let p3 = pos2(c.x, c.y + 3.5);
+        ui.painter().add(egui::epaint::PathShape::convex_polygon(
+            vec![p1, p2, p3],
+            color,
+            Stroke::NONE,
+        ));
+    } else {
+        let p1 = pos2(c.x - 5.0, c.y + 2.5);
+        let p2 = pos2(c.x + 5.0, c.y + 2.5);
+        let p3 = pos2(c.x, c.y - 3.5);
+        ui.painter().add(egui::epaint::PathShape::convex_polygon(
+            vec![p1, p2, p3],
+            color,
+            Stroke::NONE,
+        ));
+    }
+
+    resp.on_hover_text(tooltip).clicked()
+}
+
+fn draw_close_button(ui: &mut egui::Ui, tooltip: &str) -> bool {
+    let size = egui::vec2(22.0, 22.0);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let hovered = resp.hovered();
+
+    let bg_color = if hovered {
+        Theme::ACCENT_RED.gamma_multiply(0.4)
+    } else {
+        Theme::BG_PANEL_RAISED
+    };
+    let stroke_color = if hovered {
+        Theme::ACCENT_RED
+    } else {
+        Theme::ACCENT_PURPLE.gamma_multiply(0.5)
+    };
+
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(4),
+        bg_color,
+        Stroke::new(1.0, stroke_color),
+        egui::StrokeKind::Inside,
+    );
+
+    let c = rect.center();
+    let cross_color = if hovered {
+        egui::Color32::WHITE
+    } else {
+        Theme::TEXT_MUTED
+    };
+    let s = Stroke::new(1.5, cross_color);
+    let d = 4.0;
+    ui.painter().line_segment([pos2(c.x - d, c.y - d), pos2(c.x + d, c.y + d)], s);
+    ui.painter().line_segment([pos2(c.x + d, c.y - d), pos2(c.x - d, c.y + d)], s);
+
+    resp.on_hover_text(tooltip).clicked()
+}
+
 pub struct PropertiesUi;
 
 impl PropertiesUi {
@@ -53,22 +149,13 @@ impl PropertiesUi {
 
         // Collapsible header bar with arrow toggle
         ui.horizontal(|ui| {
-            let arrow_icon = if *is_expanded { "▲" } else { "▼" };
             let arrow_tooltip = if *is_expanded {
                 "Collapse properties"
             } else {
                 "Down the arrow to make menu open fully"
             };
 
-            let arrow_btn = egui::Button::new(
-                RichText::new(arrow_icon)
-                    .font(Theme::font_bold(13.0))
-                    .color(Theme::ACCENT_PINK),
-            )
-            .fill(Theme::ACCENT_PURPLE.gamma_multiply(0.35))
-            .stroke(Stroke::new(1.0, Theme::ACCENT_PINK));
-
-            if ui.add(arrow_btn).on_hover_text(arrow_tooltip).clicked() {
+            if draw_triangle_arrow_button(ui, !*is_expanded, arrow_tooltip) {
                 *is_expanded = !*is_expanded;
             }
 
@@ -82,7 +169,7 @@ impl PropertiesUi {
                 if !*is_expanded {
                     if ui
                         .button(
-                            RichText::new("Open ▼")
+                            RichText::new("Open")
                                 .font(Theme::font_bold(11.0))
                                 .color(Theme::ACCENT_PINK),
                         )
@@ -93,7 +180,7 @@ impl PropertiesUi {
                     }
                 } else if ui
                     .button(
-                        RichText::new("Collapse ▲")
+                        RichText::new("Collapse")
                             .font(Theme::font_bold(11.0))
                             .color(Theme::TEXT_MUTED),
                     )
@@ -167,7 +254,7 @@ impl PropertiesUi {
             ui.painter().text(
                 pos2(rect.min.x + 8.0, rect.min.y + 45.0),
                 egui::Align2::LEFT_CENTER,
-                "Click ▼ arrow to make menu open fully",
+                "Click arrow to make menu open fully",
                 Theme::font_regular(11.0),
                 Theme::ACCENT_PINK,
             );
@@ -220,19 +307,11 @@ impl PropertiesUi {
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         // Down arrow button to open fully
-                        let down_btn = egui::Button::new(
-                            RichText::new("▼")
-                                .font(Theme::font_bold(13.0))
-                                .color(Theme::ACCENT_PINK),
-                        )
-                        .fill(Theme::ACCENT_PURPLE.gamma_multiply(0.4))
-                        .stroke(Stroke::new(1.0, Theme::ACCENT_PINK));
-
-                        if ui
-                            .add(down_btn)
-                            .on_hover_text("Down the arrow to make the menu open fully")
-                            .clicked()
-                        {
+                        if draw_triangle_arrow_button(
+                            ui,
+                            true,
+                            "Down the arrow to make the menu open fully",
+                        ) {
                             *is_expanded = true;
                         }
 
@@ -282,7 +361,7 @@ impl PropertiesUi {
 
                         if ui
                             .button(
-                                RichText::new("Open ▼")
+                                RichText::new("Open")
                                     .font(Theme::font_bold(11.0))
                                     .color(Theme::ACCENT_PINK),
                             )
@@ -292,15 +371,7 @@ impl PropertiesUi {
                             *is_expanded = true;
                         }
 
-                        if ui
-                            .button(
-                                RichText::new("✕")
-                                    .font(Theme::font_bold(11.0))
-                                    .color(Theme::TEXT_MUTED),
-                            )
-                            .on_hover_text("Close properties")
-                            .clicked()
-                        {
+                        if draw_close_button(ui, "Close properties") {
                             *is_open = false;
                         }
                     });
@@ -322,16 +393,15 @@ impl PropertiesUi {
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-20.0, 60.0))
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let up_btn = egui::Button::new(
-                    RichText::new("▲ Collapse Menu")
-                        .font(Theme::font_bold(11.5))
-                        .color(Theme::ACCENT_PINK),
-                )
-                .fill(Theme::ACCENT_PURPLE.gamma_multiply(0.35))
-                .stroke(Stroke::new(1.0, Theme::ACCENT_PINK.gamma_multiply(0.6)));
-
+                if draw_triangle_arrow_button(ui, false, "Collapse properties menu") {
+                    *is_expanded = false;
+                }
                 if ui
-                    .add(up_btn)
+                    .button(
+                        RichText::new("Collapse Menu")
+                            .font(Theme::font_bold(11.5))
+                            .color(Theme::ACCENT_PINK),
+                    )
                     .on_hover_text("Collapse properties menu")
                     .clicked()
                 {
@@ -490,24 +560,23 @@ impl PropertiesUi {
         ui.add_space(3.0);
         ui.horizontal(|ui| {
             let dirs = [
-                (Rotation::R0, "East (0°)", "▶"),
-                (Rotation::R90, "South (90°)", "▼"),
-                (Rotation::R180, "West (180°)", "◀"),
-                (Rotation::R270, "North (270°)", "▲"),
+                (Rotation::R0, "> East (0 deg)"),
+                (Rotation::R90, "v South (90 deg)"),
+                (Rotation::R180, "< West (180 deg)"),
+                (Rotation::R270, "^ North (270 deg)"),
             ];
 
-            for (rot, name, icon) in dirs {
+            for (rot, name) in dirs {
                 let is_current = comp.rotation == rot;
-                let btn_text = format!("{} {}", icon, name);
                 let btn = if is_current {
                     egui::Button::new(
-                        RichText::new(btn_text)
+                        RichText::new(name)
                             .font(Theme::font_bold(10.5))
                             .color(Theme::ACCENT_PINK),
                     )
                     .stroke(Stroke::new(1.0, Theme::ACCENT_PINK))
                 } else {
-                    egui::Button::new(RichText::new(btn_text).font(Theme::font_regular(10.5)))
+                    egui::Button::new(RichText::new(name).font(Theme::font_regular(10.5)))
                 };
 
                 if ui.add(btn).clicked() {
@@ -543,7 +612,7 @@ impl PropertiesUi {
                 if ui
                     .add_enabled(
                         current_inputs > 2,
-                        egui::Button::new(RichText::new(" − ").font(Theme::font_bold(12.0))),
+                        egui::Button::new(RichText::new(" - ").font(Theme::font_bold(12.0))),
                     )
                     .clicked()
                 {
@@ -794,7 +863,7 @@ impl PropertiesUi {
         ui.separator();
         ui.add_space(8.0);
 
-        // 8. Quick Actions (Rotate 90°, Disconnect Wires, Delete)
+        // 8. Quick Actions (Rotate 90 deg, Disconnect Wires, Delete)
         ui.label(
             RichText::new("ACTIONS")
                 .font(Theme::font_bold(10.0))
@@ -803,7 +872,7 @@ impl PropertiesUi {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             if ui
-                .button(RichText::new("↻ Rotate 90°").font(Theme::font_medium(11.0)))
+                .button(RichText::new("Rotate 90 deg (R)").font(Theme::font_medium(11.0)))
                 .clicked()
             {
                 circuit.set_component_rotation(comp_id, comp.rotation.next());

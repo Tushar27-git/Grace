@@ -2,8 +2,8 @@ use crate::glyphs::GlyphRenderer;
 use crate::theme::{Theme, ThemeMode};
 use crate::tools::{ActiveTool, MarqueeState, SelectionState, WireInProgress};
 use eframe::egui::{
-    self, Color32, CursorIcon, Key, Painter, Pos2, Rect, Response, RichText, Sense, Stroke, Ui,
-    Vec2,
+    self, Color32, CornerRadius, CursorIcon, Key, Painter, Pos2, Rect, Response, RichText, Sense,
+    Stroke, Ui, Vec2, pos2,
 };
 use logic_core::{Circuit, ComponentId, GateKind, NetId, PortEndpoint, Signal, Simulator};
 
@@ -277,7 +277,7 @@ impl CanvasState {
             return;
         }
 
-        // Adaptive stride so dots remain crisp without moiré or lag when zoomed out
+        // Adaptive stride so dots remain crisp without moire or lag when zoomed out
         let stride = if self.zoom < 0.35 {
             4
         } else if self.zoom < 0.7 {
@@ -707,31 +707,167 @@ impl CanvasState {
 
                     for (tool, tooltip) in tools {
                         let is_active = self.active_tool == tool;
-                        let btn_text = RichText::new(tool.icon())
-                            .font(Theme::font_bold(16.0))
-                            .color(if is_active {
-                                Theme::ACCENT_PINK
-                            } else {
-                                Theme::TEXT_PRIMARY
-                            });
+                        let (btn_rect, btn_resp) =
+                            ui.allocate_exact_size(Vec2::new(36.0, 32.0), Sense::click());
 
-                        let btn = egui::Button::new(btn_text)
-                            .min_size(Vec2::new(36.0, 32.0))
-                            .fill(if is_active {
-                                Theme::ACCENT_PURPLE.gamma_multiply(0.45)
-                            } else {
-                                Theme::BG_PANEL
-                            })
-                            .stroke(Stroke::new(
-                                if is_active { 1.5 } else { 1.0 },
-                                if is_active {
-                                    Theme::ACCENT_PINK
-                                } else {
-                                    Theme::ACCENT_PURPLE.gamma_multiply(0.4)
-                                },
-                            ));
+                        let bg_color = if is_active {
+                            Theme::ACCENT_PURPLE.gamma_multiply(0.45)
+                        } else if btn_resp.hovered() {
+                            Theme::BG_PANEL_RAISED
+                        } else {
+                            Theme::BG_PANEL
+                        };
 
-                        if ui.add(btn).on_hover_text(tooltip).clicked() {
+                        let stroke_color = if is_active {
+                            Theme::ACCENT_PINK
+                        } else if btn_resp.hovered() {
+                            Theme::ACCENT_PINK.gamma_multiply(0.7)
+                        } else {
+                            Theme::ACCENT_PURPLE.gamma_multiply(0.4)
+                        };
+
+                        let stroke_width = if is_active { 1.5 } else { 1.0 };
+                        ui.painter().rect(
+                            btn_rect,
+                            CornerRadius::same(5),
+                            bg_color,
+                            Stroke::new(stroke_width, stroke_color),
+                            egui::StrokeKind::Inside,
+                        );
+
+                        let icon_color = if is_active {
+                            Theme::ACCENT_PINK
+                        } else if btn_resp.hovered() {
+                            Color32::WHITE
+                        } else {
+                            Theme::TEXT_PRIMARY
+                        };
+
+                        let c = btn_rect.center();
+                        let p = ui.painter();
+
+                        match tool {
+                            ActiveTool::Normal => {
+                                // Pointer / Cursor arrow pointing northwest
+                                let tip = pos2(c.x - 5.0, c.y - 6.0);
+                                let p1 = pos2(c.x - 5.0, c.y + 6.0);
+                                let p2 = pos2(c.x - 1.5, c.y + 2.5);
+                                let p3 = pos2(c.x + 3.5, c.y + 7.5);
+                                let p4 = pos2(c.x + 5.5, c.y + 5.5);
+                                let p5 = pos2(c.x + 0.5, c.y + 0.5);
+                                let p6 = pos2(c.x + 5.0, c.y - 0.5);
+                                p.add(egui::epaint::PathShape::convex_polygon(
+                                    vec![tip, p1, p2, p3, p4, p5, p6],
+                                    icon_color.gamma_multiply(0.3),
+                                    Stroke::new(1.3, icon_color),
+                                ));
+                            }
+                            ActiveTool::Marquee => {
+                                // Box selection marquee icon: 4 corner brackets + center dot
+                                let hw = 7.0;
+                                let hh = 6.0;
+                                let b = 3.5;
+                                let s = Stroke::new(1.4, icon_color);
+                                // Top-left
+                                p.line_segment(
+                                    [pos2(c.x - hw, c.y - hh + b), pos2(c.x - hw, c.y - hh)],
+                                    s,
+                                );
+                                p.line_segment(
+                                    [pos2(c.x - hw, c.y - hh), pos2(c.x - hw + b, c.y - hh)],
+                                    s,
+                                );
+                                // Top-right
+                                p.line_segment(
+                                    [pos2(c.x + hw - b, c.y - hh), pos2(c.x + hw, c.y - hh)],
+                                    s,
+                                );
+                                p.line_segment(
+                                    [pos2(c.x + hw, c.y - hh), pos2(c.x + hw, c.y - hh + b)],
+                                    s,
+                                );
+                                // Bottom-right
+                                p.line_segment(
+                                    [pos2(c.x + hw, c.y + hh - b), pos2(c.x + hw, c.y + hh)],
+                                    s,
+                                );
+                                p.line_segment(
+                                    [pos2(c.x + hw, c.y + hh), pos2(c.x + hw - b, c.y + hh)],
+                                    s,
+                                );
+                                // Bottom-left
+                                p.line_segment(
+                                    [pos2(c.x - hw + b, c.y + hh), pos2(c.x - hw, c.y + hh)],
+                                    s,
+                                );
+                                p.line_segment(
+                                    [pos2(c.x - hw, c.y + hh), pos2(c.x - hw, c.y + hh - b)],
+                                    s,
+                                );
+                                // Center alignment dot
+                                p.circle_filled(c, 1.3, icon_color.gamma_multiply(0.8));
+                            }
+                            ActiveTool::Connect => {
+                                // Circuit wiring connection icon: two port terminals with an orthogonal interconnect wire
+                                let p_left = pos2(c.x - 7.0, c.y + 4.0);
+                                let p_right = pos2(c.x + 7.0, c.y - 4.0);
+                                let s = Stroke::new(1.5, icon_color);
+                                // Stepped wire
+                                p.line_segment([p_left, pos2(c.x, c.y + 4.0)], s);
+                                p.line_segment([pos2(c.x, c.y + 4.0), pos2(c.x, c.y - 4.0)], s);
+                                p.line_segment([pos2(c.x, c.y - 4.0), p_right], s);
+                                // Terminal circular ports
+                                p.circle_filled(p_left, 2.5, icon_color);
+                                p.circle_filled(p_right, 2.5, icon_color);
+                                // Central wire junction dot
+                                p.circle_filled(pos2(c.x, c.y), 1.6, icon_color);
+                            }
+                            ActiveTool::Pan => {
+                                // 4-way pan / move cross navigation arrows
+                                let len = 7.0;
+                                let s = Stroke::new(1.4, icon_color);
+                                p.line_segment([pos2(c.x - len, c.y), pos2(c.x + len, c.y)], s);
+                                p.line_segment([pos2(c.x, c.y - len), pos2(c.x, c.y + len)], s);
+                                // Left arrowhead
+                                p.line_segment(
+                                    [pos2(c.x - len + 2.5, c.y - 2.5), pos2(c.x - len, c.y)],
+                                    s,
+                                );
+                                p.line_segment(
+                                    [pos2(c.x - len + 2.5, c.y + 2.5), pos2(c.x - len, c.y)],
+                                    s,
+                                );
+                                // Right arrowhead
+                                p.line_segment(
+                                    [pos2(c.x + len - 2.5, c.y - 2.5), pos2(c.x + len, c.y)],
+                                    s,
+                                );
+                                p.line_segment(
+                                    [pos2(c.x + len - 2.5, c.y + 2.5), pos2(c.x + len, c.y)],
+                                    s,
+                                );
+                                // Up arrowhead
+                                p.line_segment(
+                                    [pos2(c.x - 2.5, c.y - len + 2.5), pos2(c.x, c.y - len)],
+                                    s,
+                                );
+                                p.line_segment(
+                                    [pos2(c.x + 2.5, c.y - len + 2.5), pos2(c.x, c.y - len)],
+                                    s,
+                                );
+                                // Down arrowhead
+                                p.line_segment(
+                                    [pos2(c.x - 2.5, c.y + len - 2.5), pos2(c.x, c.y + len)],
+                                    s,
+                                );
+                                p.line_segment(
+                                    [pos2(c.x + 2.5, c.y + len - 2.5), pos2(c.x, c.y + len)],
+                                    s,
+                                );
+                            }
+                        }
+
+                        if btn_resp.on_hover_text(tooltip).clicked() {
                             self.active_tool = tool;
                             if tool != ActiveTool::Connect {
                                 self.wire_in_progress = None;
