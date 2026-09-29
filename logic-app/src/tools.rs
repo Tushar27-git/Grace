@@ -32,6 +32,23 @@ impl ActiveTool {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PlacementMode {
+    #[default]
+    Single,
+    Multi,
+}
+
+impl PlacementMode {
+    #[allow(dead_code)]
+    pub fn label(&self) -> &'static str {
+        match self {
+            PlacementMode::Single => "Single",
+            PlacementMode::Multi => "Multi",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SelectionState {
     pub selected_components: HashSet<ComponentId>,

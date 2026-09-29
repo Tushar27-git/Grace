@@ -1,107 +1,11 @@
 use crate::theme::Theme;
-use eframe::egui::{self, CornerRadius, Rect, RichText, Sense, Stroke, Ui, Vec2, pos2};
+use eframe::egui::{self, CornerRadius, RichText, Sense, Stroke, Ui, Vec2};
 use logic_core::{Circuit, ComponentId, GateKind, Rotation};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LeftPanelTab {
     Components,
     Properties,
-}
-
-fn draw_triangle_arrow_button(
-    ui: &mut egui::Ui,
-    pointing_down: bool,
-    tooltip: &str,
-) -> bool {
-    let size = egui::vec2(24.0, 22.0);
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    let hovered = resp.hovered();
-
-    let bg_color = if hovered {
-        Theme::ACCENT_PURPLE.gamma_multiply(0.6)
-    } else {
-        Theme::ACCENT_PURPLE.gamma_multiply(0.35)
-    };
-    let stroke_color = if hovered {
-        Theme::ACCENT_PINK
-    } else {
-        Theme::ACCENT_PINK.gamma_multiply(0.8)
-    };
-
-    ui.painter().rect(
-        rect,
-        CornerRadius::same(4),
-        bg_color,
-        Stroke::new(1.0, stroke_color),
-        egui::StrokeKind::Inside,
-    );
-
-    let c = rect.center();
-    let color = if hovered {
-        egui::Color32::WHITE
-    } else {
-        Theme::ACCENT_PINK
-    };
-
-    if pointing_down {
-        let p1 = pos2(c.x - 5.0, c.y - 2.5);
-        let p2 = pos2(c.x + 5.0, c.y - 2.5);
-        let p3 = pos2(c.x, c.y + 3.5);
-        ui.painter().add(egui::epaint::PathShape::convex_polygon(
-            vec![p1, p2, p3],
-            color,
-            Stroke::NONE,
-        ));
-    } else {
-        let p1 = pos2(c.x - 5.0, c.y + 2.5);
-        let p2 = pos2(c.x + 5.0, c.y + 2.5);
-        let p3 = pos2(c.x, c.y - 3.5);
-        ui.painter().add(egui::epaint::PathShape::convex_polygon(
-            vec![p1, p2, p3],
-            color,
-            Stroke::NONE,
-        ));
-    }
-
-    resp.on_hover_text(tooltip).clicked()
-}
-
-fn draw_close_button(ui: &mut egui::Ui, tooltip: &str) -> bool {
-    let size = egui::vec2(22.0, 22.0);
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    let hovered = resp.hovered();
-
-    let bg_color = if hovered {
-        Theme::ACCENT_RED.gamma_multiply(0.4)
-    } else {
-        Theme::BG_PANEL_RAISED
-    };
-    let stroke_color = if hovered {
-        Theme::ACCENT_RED
-    } else {
-        Theme::ACCENT_PURPLE.gamma_multiply(0.5)
-    };
-
-    ui.painter().rect(
-        rect,
-        CornerRadius::same(4),
-        bg_color,
-        Stroke::new(1.0, stroke_color),
-        egui::StrokeKind::Inside,
-    );
-
-    let c = rect.center();
-    let cross_color = if hovered {
-        egui::Color32::WHITE
-    } else {
-        Theme::TEXT_MUTED
-    };
-    let s = Stroke::new(1.5, cross_color);
-    let d = 4.0;
-    ui.painter().line_segment([pos2(c.x - d, c.y - d), pos2(c.x + d, c.y + d)], s);
-    ui.painter().line_segment([pos2(c.x + d, c.y - d), pos2(c.x - d, c.y + d)], s);
-
-    resp.on_hover_text(tooltip).clicked()
 }
 
 pub struct PropertiesUi;
@@ -112,7 +16,7 @@ impl PropertiesUi {
         ui: &mut Ui,
         circuit: &mut Circuit,
         selected_id: Option<ComponentId>,
-        is_expanded: &mut bool,
+        _is_expanded: &mut bool,
     ) -> bool {
         let mut mutated = false;
 
@@ -131,290 +35,31 @@ impl PropertiesUi {
             return false;
         };
 
-        let comp = match circuit.components.get(comp_id) {
-            Some(c) => c.clone(),
-            None => {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("PROPERTIES")
-                            .font(Theme::font_bold(14.5))
-                            .color(Theme::TEXT_PRIMARY),
-                    );
-                });
-                ui.add_space(8.0);
-                Self::show_empty_placeholder(ui, circuit);
-                return false;
-            }
-        };
+        if !circuit.components.contains_key(comp_id) {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new("PROPERTIES")
+                        .font(Theme::font_bold(14.5))
+                        .color(Theme::TEXT_PRIMARY),
+                );
+            });
+            ui.add_space(8.0);
+            Self::show_empty_placeholder(ui, circuit);
+            return false;
+        }
 
-        // Collapsible header bar with arrow toggle
         ui.horizontal(|ui| {
-            let arrow_tooltip = if *is_expanded {
-                "Collapse properties"
-            } else {
-                "Down the arrow to make menu open fully"
-            };
-
-            if draw_triangle_arrow_button(ui, !*is_expanded, arrow_tooltip) {
-                *is_expanded = !*is_expanded;
-            }
-
             ui.label(
                 RichText::new("PROPERTIES")
                     .font(Theme::font_bold(14.5))
                     .color(Theme::TEXT_PRIMARY),
             );
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if !*is_expanded {
-                    if ui
-                        .button(
-                            RichText::new("Open")
-                                .font(Theme::font_bold(11.0))
-                                .color(Theme::ACCENT_PINK),
-                        )
-                        .on_hover_text("Make the menu open fully")
-                        .clicked()
-                    {
-                        *is_expanded = true;
-                    }
-                } else if ui
-                    .button(
-                        RichText::new("Collapse")
-                            .font(Theme::font_bold(11.0))
-                            .color(Theme::TEXT_MUTED),
-                    )
-                    .on_hover_text("Collapse properties")
-                    .clicked()
-                {
-                    *is_expanded = false;
-                }
-            });
         });
 
         ui.add_space(6.0);
 
-        if !*is_expanded {
-            // Collapsed banner card in left panel
-            let (rect, resp) =
-                ui.allocate_exact_size(Vec2::new(ui.available_width(), 64.0), Sense::click());
-            let is_hov = resp.hovered();
-            ui.painter().rect(
-                rect,
-                CornerRadius::same(6),
-                if is_hov {
-                    Theme::BG_PANEL_RAISED
-                } else {
-                    Theme::BG_PANEL
-                },
-                Stroke::new(
-                    1.0,
-                    if is_hov {
-                        Theme::ACCENT_PINK
-                    } else {
-                        Theme::ACCENT_PURPLE.gamma_multiply(0.4)
-                    },
-                ),
-                egui::StrokeKind::Inside,
-            );
-
-            let badge_rect = Rect::from_min_size(
-                pos2(rect.min.x + 8.0, rect.min.y + 8.0),
-                Vec2::new(32.0, 22.0),
-            );
-            ui.painter()
-                .rect_filled(badge_rect, CornerRadius::same(3), Theme::BG_CANVAS_DARK);
-            ui.painter().rect_stroke(
-                badge_rect,
-                CornerRadius::same(3),
-                Stroke::new(1.0, Theme::ACCENT_PINK),
-                egui::StrokeKind::Inside,
-            );
-            ui.painter().text(
-                badge_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                comp.kind.short_code(),
-                Theme::font_bold(9.0),
-                Theme::ACCENT_PINK,
-            );
-
-            let title = if comp.label.is_empty() {
-                comp.kind.display_name().to_string()
-            } else {
-                format!("{} ({})", comp.kind.display_name(), comp.label)
-            };
-            ui.painter().text(
-                pos2(rect.min.x + 48.0, rect.min.y + 19.0),
-                egui::Align2::LEFT_CENTER,
-                title,
-                Theme::font_bold(13.0),
-                Theme::TEXT_PRIMARY,
-            );
-
-            ui.painter().text(
-                pos2(rect.min.x + 8.0, rect.min.y + 45.0),
-                egui::Align2::LEFT_CENTER,
-                "Click arrow to make menu open fully",
-                Theme::font_regular(11.0),
-                Theme::ACCENT_PINK,
-            );
-
-            if resp.clicked() {
-                *is_expanded = true;
-            }
-            return false;
-        }
-
         egui::ScrollArea::vertical().show(ui, |ui| {
             mutated |= Self::render_component_properties(ui, circuit, comp_id);
-        });
-
-        mutated
-    }
-
-    /// Renders a floating glass inspector window in the top-right / middle of the canvas
-    pub fn show_floating_window(
-        ctx: &egui::Context,
-        circuit: &mut Circuit,
-        selected_id: Option<ComponentId>,
-        is_open: &mut bool,
-        is_expanded: &mut bool,
-    ) -> bool {
-        if !*is_open {
-            return false;
-        }
-
-        let Some(comp_id) = selected_id else {
-            return false;
-        };
-
-        let comp = match circuit.components.get(comp_id) {
-            Some(c) => c.clone(),
-            None => return false,
-        };
-
-        let mut mutated = false;
-        let modal_frame = Theme::glass_modal();
-
-        if !*is_expanded {
-            // Collapsed manner: sleek compact floating bar with down arrow
-            egui::Window::new("PROPERTIES_COLLAPSED_WINDOW")
-                .title_bar(false)
-                .resizable(false)
-                .collapsible(false)
-                .frame(modal_frame)
-                .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-20.0, 60.0))
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        // Down arrow button to open fully
-                        if draw_triangle_arrow_button(
-                            ui,
-                            true,
-                            "Down the arrow to make the menu open fully",
-                        ) {
-                            *is_expanded = true;
-                        }
-
-                        // Badge
-                        let (badge_rect, _) =
-                            ui.allocate_exact_size(Vec2::new(30.0, 22.0), Sense::hover());
-                        ui.painter().rect_filled(
-                            badge_rect,
-                            CornerRadius::same(3),
-                            Theme::BG_CANVAS_DARK,
-                        );
-                        ui.painter().rect_stroke(
-                            badge_rect,
-                            CornerRadius::same(3),
-                            Stroke::new(1.0, Theme::ACCENT_PINK),
-                            egui::StrokeKind::Inside,
-                        );
-                        ui.painter().text(
-                            badge_rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            comp.kind.short_code(),
-                            Theme::font_bold(9.0),
-                            Theme::ACCENT_PINK,
-                        );
-
-                        // Component title
-                        let display_title = if comp.label.is_empty() {
-                            format!("{} Properties", comp.kind.display_name())
-                        } else {
-                            format!("{} ({})", comp.kind.display_name(), comp.label)
-                        };
-
-                        if ui
-                            .selectable_label(
-                                false,
-                                RichText::new(display_title)
-                                    .font(Theme::font_bold(13.0))
-                                    .color(Theme::TEXT_PRIMARY),
-                            )
-                            .on_hover_text("Click to make menu open fully")
-                            .clicked()
-                        {
-                            *is_expanded = true;
-                        }
-
-                        ui.add_space(4.0);
-
-                        if ui
-                            .button(
-                                RichText::new("Open")
-                                    .font(Theme::font_bold(11.0))
-                                    .color(Theme::ACCENT_PINK),
-                            )
-                            .on_hover_text("Down the arrow and make the menu open fully")
-                            .clicked()
-                        {
-                            *is_expanded = true;
-                        }
-
-                        if draw_close_button(ui, "Close properties") {
-                            *is_open = false;
-                        }
-                    });
-                });
-
-            return false;
-        }
-
-        // Expanded manner: full properties menu
-        egui::Window::new(
-            RichText::new("COMPONENT PROPERTIES")
-                .font(Theme::font_bold(15.0))
-                .color(Theme::TEXT_PRIMARY),
-        )
-        .open(is_open)
-        .frame(modal_frame)
-        .resizable(true)
-        .default_size(Vec2::new(330.0, 440.0))
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-20.0, 60.0))
-        .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if draw_triangle_arrow_button(ui, false, "Collapse properties menu") {
-                    *is_expanded = false;
-                }
-                if ui
-                    .button(
-                        RichText::new("Collapse Menu")
-                            .font(Theme::font_bold(11.5))
-                            .color(Theme::ACCENT_PINK),
-                    )
-                    .on_hover_text("Collapse properties menu")
-                    .clicked()
-                {
-                    *is_expanded = false;
-                }
-            });
-            ui.add_space(4.0);
-            ui.separator();
-            ui.add_space(4.0);
-
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                mutated |= Self::render_component_properties(ui, circuit, comp_id);
-            });
         });
 
         mutated

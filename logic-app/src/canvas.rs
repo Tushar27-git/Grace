@@ -1,6 +1,8 @@
 use crate::glyphs::GlyphRenderer;
 use crate::theme::{Theme, ThemeMode};
-use crate::tools::{ActiveTool, MarqueeState, SelectionState, WireDropSearchState, WireInProgress};
+use crate::tools::{
+    ActiveTool, MarqueeState, PlacementMode, SelectionState, WireDropSearchState, WireInProgress,
+};
 use eframe::egui::{
     self, Color32, CornerRadius, CursorIcon, Key, Painter, Pos2, Rect, Response, Sense, Stroke,
     Ui, Vec2, pos2,
@@ -87,6 +89,7 @@ impl CanvasState {
         ui: &mut Ui,
         circuit: &mut Circuit,
         selected_for_placement: &mut Option<GateKind>,
+        placement_mode: PlacementMode,
         theme_mode: ThemeMode,
     ) -> CanvasResponse {
         let mut response_meta = CanvasResponse {
@@ -121,6 +124,7 @@ impl CanvasState {
             &response,
             circuit,
             selected_for_placement,
+            placement_mode,
             pointer_canvas,
             &mut response_meta,
         );
@@ -213,6 +217,17 @@ impl CanvasState {
                 self.zoom,
                 theme_mode,
             );
+
+            if placement_mode == PlacementMode::Multi {
+                let screen_pos = self.canvas_to_screen(snapped);
+                painter.text(
+                    pos2(screen_pos.x, screen_pos.y - 30.0),
+                    egui::Align2::CENTER_CENTER,
+                    "MULTI (1 Click = 1 Stamp)",
+                    Theme::font_bold(10.0),
+                    Theme::ACCENT_PINK,
+                );
+            }
         }
 
         // 9. Draw Marquee Selection Box
@@ -547,6 +562,7 @@ impl CanvasState {
         response: &Response,
         circuit: &mut Circuit,
         selected_for_placement: &mut Option<GateKind>,
+        placement_mode: PlacementMode,
         pointer_canvas: Option<Pos2>,
         meta: &mut CanvasResponse,
     ) {
@@ -584,7 +600,9 @@ impl CanvasState {
                 self.selection.select_single(id);
                 meta.circuit_mutated = true;
                 meta.placed_component = true;
-                *selected_for_placement = None;
+                if placement_mode == PlacementMode::Single {
+                    *selected_for_placement = None;
+                }
             }
             return;
         }

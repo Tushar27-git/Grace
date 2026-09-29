@@ -3,7 +3,7 @@ use crate::hdl_ui::HdlUiState;
 use crate::palette::Palette;
 use crate::properties_ui::{LeftPanelTab, PropertiesUi};
 use crate::theme::{Theme, ThemeMode, apply_theme};
-use crate::tools::ActiveTool;
+use crate::tools::{ActiveTool, PlacementMode};
 use crate::verification_ui::{UniversalChallenge, VerificationUiState};
 use crate::waveform::WaveformState;
 use eframe::egui::{self, CentralPanel, Frame, Key, Panel, RichText, Ui};
@@ -17,6 +17,7 @@ pub struct LogicLabApp {
     pub circuit: Circuit,
     pub canvas: CanvasState,
     pub selected_for_placement: Option<GateKind>,
+    pub placement_mode: PlacementMode,
     pub undo_stack: Vec<Circuit>,
     pub redo_stack: Vec<Circuit>,
     pub clock_running: bool,
@@ -29,7 +30,6 @@ pub struct LogicLabApp {
     pub hdl_ui: HdlUiState,
     pub theme_mode: ThemeMode,
     pub left_panel_tab: LeftPanelTab,
-    pub show_properties_window: bool,
     pub properties_expanded: bool,
     pub last_selected_comp: Option<ComponentId>,
 }
@@ -44,6 +44,7 @@ impl LogicLabApp {
             circuit,
             canvas: CanvasState::default(),
             selected_for_placement: None,
+            placement_mode: PlacementMode::Single,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             clock_running: false,
@@ -56,7 +57,6 @@ impl LogicLabApp {
             hdl_ui: HdlUiState::default(),
             theme_mode: ThemeMode::Dark,
             left_panel_tab: LeftPanelTab::Components,
-            show_properties_window: true,
             properties_expanded: false,
             last_selected_comp: None,
         }
@@ -492,7 +492,11 @@ impl eframe::App for LogicLabApp {
             } else if i.key_pressed(Key::F8) || (ctrl && i.key_pressed(Key::T)) {
                 self.theme_mode.toggle();
             } else if !ctrl && i.key_pressed(Key::P) {
-                self.show_properties_window = !self.show_properties_window;
+                if self.left_panel_tab == LeftPanelTab::Properties {
+                    self.left_panel_tab = LeftPanelTab::Components;
+                } else {
+                    self.left_panel_tab = LeftPanelTab::Properties;
+                }
             } else if !ctrl && !shift {
                 if i.key_pressed(Key::Num1) || i.key_pressed(Key::V) {
                     self.canvas.active_tool = ActiveTool::Normal;
@@ -625,13 +629,17 @@ impl eframe::App for LogicLabApp {
                         self.theme_mode.toggle();
                     }
                     ui.separator();
-                    let prop_lbl = if self.show_properties_window {
-                        "Properties Inspector (P): Visible"
+                    let prop_lbl = if self.left_panel_tab == LeftPanelTab::Properties {
+                        "Properties Tab (P): Active"
                     } else {
-                        "Properties Inspector (P): Hidden"
+                        "Properties Tab (P): Switch"
                     };
                     if ui.button(prop_lbl).clicked() {
-                        self.show_properties_window = !self.show_properties_window;
+                        if self.left_panel_tab == LeftPanelTab::Properties {
+                            self.left_panel_tab = LeftPanelTab::Components;
+                        } else {
+                            self.left_panel_tab = LeftPanelTab::Properties;
+                        }
                     }
                     ui.separator();
                     let grid_lbl = if self.canvas.show_grid {
@@ -795,8 +803,7 @@ impl eframe::App for LogicLabApp {
 
                         if sel_count == 1 {
                             ui.separator();
-                            let is_open = self.show_properties_window
-                                || self.left_panel_tab == LeftPanelTab::Properties;
+                            let is_open = self.left_panel_tab == LeftPanelTab::Properties;
                             let prop_col = if is_open {
                                 Theme::ACCENT_PINK
                             } else {
@@ -811,7 +818,6 @@ impl eframe::App for LogicLabApp {
                                 .on_hover_text("Open Component Properties (P)")
                                 .clicked()
                             {
-                                self.show_properties_window = true;
                                 self.left_panel_tab = LeftPanelTab::Properties;
                             }
                         }
@@ -977,7 +983,12 @@ impl eframe::App for LogicLabApp {
 
                 match self.left_panel_tab {
                     LeftPanelTab::Components => {
-                        Palette::show(ui, &mut self.selected_for_placement, &self.circuit);
+                        Palette::show(
+                            ui,
+                            &mut self.selected_for_placement,
+                            &self.circuit,
+                            &mut self.placement_mode,
+                        );
                     }
                     LeftPanelTab::Properties => {
                         if PropertiesUi::show_panel(
@@ -1002,6 +1013,7 @@ impl eframe::App for LogicLabApp {
                 ui,
                 &mut self.circuit,
                 &mut self.selected_for_placement,
+                self.placement_mode,
                 self.theme_mode,
             );
             if canvas_res.trigger_undo {
@@ -1023,34 +1035,11 @@ impl eframe::App for LogicLabApp {
                 }
                 self.redo_stack.clear();
                 self.waveform.sample_circuit(&self.circuit);
+                if canvas_res.placed_component && self.placement_mode == PlacementMode::Multi {
+                    self.status_message = "Multi Mode: Component stamped! Click repeatedly to place more, or Esc / Right-Click to finish.".to_string();
+                }
             }
         });
-
-        // 6. Floating Properties Inspector Window (Canvas top-right / middle)
-        let selected_comp = if self.canvas.selection.selected_components.len() == 1 {
-            self.canvas
-                .selection
-                .selected_components
-                .iter()
-                .copied()
-                .next()
-        } else {
-            None
-        };
-        if self.show_properties_window
-            && selected_comp.is_some()
-            && PropertiesUi::show_floating_window(
-                ui.ctx(),
-                &mut self.circuit,
-                selected_comp,
-                &mut self.show_properties_window,
-                &mut self.properties_expanded,
-            )
-        {
-            Simulator::settle(&mut self.circuit);
-            self.waveform.sample_circuit(&self.circuit);
-            self.push_undo();
-        }
 
         // 5. Verification & Truth Table Modal
         self.verification_ui.show(

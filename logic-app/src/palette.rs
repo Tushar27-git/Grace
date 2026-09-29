@@ -1,4 +1,5 @@
 use crate::theme::Theme;
+use crate::tools::PlacementMode;
 use eframe::egui::{self, CornerRadius, Sense, Stroke, Ui, Vec2};
 use logic_core::{Circuit, GateKind};
 
@@ -63,6 +64,7 @@ impl Palette {
         ui: &mut Ui,
         selected_for_placement: &mut Option<GateKind>,
         circuit: &Circuit,
+        placement_mode: &mut PlacementMode,
     ) -> Option<GateKind> {
         let mut clicked_kind = None;
 
@@ -70,9 +72,70 @@ impl Palette {
         ui.horizontal(|ui| {
             ui.label(
                 egui::RichText::new("COMPONENTS")
-                    .font(Theme::font_bold(13.0))
+                    .font(Theme::font_bold(12.5))
                     .color(Theme::TEXT_PRIMARY),
             );
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let is_multi = *placement_mode == PlacementMode::Multi;
+                let is_single = *placement_mode == PlacementMode::Single;
+
+                let multi_btn = if is_multi {
+                    egui::Button::new(
+                        egui::RichText::new("MULTI")
+                            .font(Theme::font_bold(9.5))
+                            .color(Theme::ACCENT_PINK),
+                    )
+                    .fill(Theme::ACCENT_PINK.gamma_multiply(0.20))
+                    .stroke(egui::Stroke::new(1.0, Theme::ACCENT_PINK))
+                    .corner_radius(egui::CornerRadius::same(3))
+                } else {
+                    egui::Button::new(
+                        egui::RichText::new("MULTI")
+                            .font(Theme::font_medium(9.5))
+                            .color(Theme::TEXT_MUTED),
+                    )
+                    .fill(egui::Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::new(1.0, Theme::ACCENT_PURPLE.gamma_multiply(0.4)))
+                    .corner_radius(egui::CornerRadius::same(3))
+                };
+
+                if ui
+                    .add(multi_btn)
+                    .on_hover_text("Multi Mode: 1 left click per component stamp.\nPlace as many as you want! Right-click or Esc to finish.")
+                    .clicked()
+                {
+                    *placement_mode = PlacementMode::Multi;
+                }
+
+                let single_btn = if is_single {
+                    egui::Button::new(
+                        egui::RichText::new("SINGLE")
+                            .font(Theme::font_bold(9.5))
+                            .color(Theme::ACCENT_PINK),
+                    )
+                    .fill(Theme::ACCENT_PINK.gamma_multiply(0.20))
+                    .stroke(egui::Stroke::new(1.0, Theme::ACCENT_PINK))
+                    .corner_radius(egui::CornerRadius::same(3))
+                } else {
+                    egui::Button::new(
+                        egui::RichText::new("SINGLE")
+                            .font(Theme::font_medium(9.5))
+                            .color(Theme::TEXT_MUTED),
+                    )
+                    .fill(egui::Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::new(1.0, Theme::ACCENT_PURPLE.gamma_multiply(0.4)))
+                    .corner_radius(egui::CornerRadius::same(3))
+                };
+
+                if ui
+                    .add(single_btn)
+                    .on_hover_text("Single Mode: Place 1 component per selection.")
+                    .clicked()
+                {
+                    *placement_mode = PlacementMode::Single;
+                }
+            });
         });
         ui.add_space(6.0);
 
@@ -181,8 +244,12 @@ impl Palette {
             if selected_for_placement.is_some() {
                 ui.separator();
                 ui.add_space(6.0);
+                let hint = match *placement_mode {
+                    PlacementMode::Single => "Click on canvas to place.\nRight-click or Esc to cancel.",
+                    PlacementMode::Multi => "MULTI MODE ACTIVE:\n1 left click per component.\nClick repeatedly on canvas to stamp as many as you want!\nRight-click or Esc to finish.",
+                };
                 ui.label(
-                    egui::RichText::new("Click on canvas to place.\nRight-click or Esc to cancel.")
+                    egui::RichText::new(hint)
                         .size(11.0)
                         .color(Theme::ACCENT_PINK),
                 );
