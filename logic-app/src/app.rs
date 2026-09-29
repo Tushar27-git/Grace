@@ -2,8 +2,10 @@ use crate::canvas::CanvasState;
 use crate::hdl_ui::HdlUiState;
 use crate::palette::Palette;
 use crate::properties_ui::{LeftPanelTab, PropertiesUi};
+use crate::settings_ui::SettingsUi;
 use crate::theme::{Theme, ThemeMode, apply_theme};
 use crate::tools::{ActiveTool, PlacementMode};
+use crate::updater::UpdaterState;
 use crate::verification_ui::{UniversalChallenge, VerificationUiState};
 use crate::waveform::WaveformState;
 use eframe::egui::{self, CentralPanel, Frame, Key, Panel, RichText, Ui};
@@ -32,6 +34,7 @@ pub struct LogicLabApp {
     pub left_panel_tab: LeftPanelTab,
     pub properties_expanded: bool,
     pub last_selected_comp: Option<ComponentId>,
+    pub updater: UpdaterState,
 }
 
 impl LogicLabApp {
@@ -59,6 +62,7 @@ impl LogicLabApp {
             left_panel_tab: LeftPanelTab::Components,
             properties_expanded: false,
             last_selected_comp: None,
+            updater: UpdaterState::default(),
         }
     }
 
@@ -726,6 +730,24 @@ impl eframe::App for LogicLabApp {
                     });
                 });
 
+                // Settings Menu
+                ui.menu_button("Settings", |ui| {
+                    if ui.button("Settings & Updates...").clicked() {
+                        ui.close();
+                        self.left_panel_tab = LeftPanelTab::Settings;
+                    }
+                    ui.separator();
+                    if ui.button("↗ GitHub Repository").clicked() {
+                        ui.close();
+                        crate::updater::open_browser(crate::updater::GITHUB_REPO_URL);
+                    }
+                    if ui.button("↗ Check for Updates").clicked() {
+                        ui.close();
+                        self.left_panel_tab = LeftPanelTab::Settings;
+                        self.updater.check_for_updates();
+                    }
+                });
+
                 // Right-aligned quick indicators
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Theme toggle button
@@ -940,17 +962,18 @@ impl eframe::App for LogicLabApp {
                 ui.horizontal(|ui| {
                     let comp_active = self.left_panel_tab == LeftPanelTab::Components;
                     let prop_active = self.left_panel_tab == LeftPanelTab::Properties;
+                    let settings_active = self.left_panel_tab == LeftPanelTab::Settings;
 
                     let comp_btn = if comp_active {
                         egui::Button::new(
                             RichText::new("COMPONENTS")
-                                .font(Theme::font_bold(10.5))
+                                .font(Theme::font_bold(9.5))
                                 .color(Theme::ACCENT_PINK),
                         )
                         .stroke(egui::Stroke::new(1.0, Theme::ACCENT_PINK))
                     } else {
                         egui::Button::new(
-                            RichText::new("COMPONENTS").font(Theme::font_regular(10.5)),
+                            RichText::new("COMPONENTS").font(Theme::font_regular(9.5)),
                         )
                     };
                     if ui.add(comp_btn).clicked() {
@@ -965,15 +988,29 @@ impl eframe::App for LogicLabApp {
                     let prop_btn = if prop_active {
                         egui::Button::new(
                             RichText::new(prop_label)
-                                .font(Theme::font_bold(10.5))
+                                .font(Theme::font_bold(9.5))
                                 .color(Theme::ACCENT_PINK),
                         )
                         .stroke(egui::Stroke::new(1.0, Theme::ACCENT_PINK))
                     } else {
-                        egui::Button::new(RichText::new(prop_label).font(Theme::font_regular(10.5)))
+                        egui::Button::new(RichText::new(prop_label).font(Theme::font_regular(9.5)))
                     };
                     if ui.add(prop_btn).clicked() {
                         self.left_panel_tab = LeftPanelTab::Properties;
+                    }
+
+                    let settings_btn = if settings_active {
+                        egui::Button::new(
+                            RichText::new("SETTINGS")
+                                .font(Theme::font_bold(9.5))
+                                .color(Theme::ACCENT_PINK),
+                        )
+                        .stroke(egui::Stroke::new(1.0, Theme::ACCENT_PINK))
+                    } else {
+                        egui::Button::new(RichText::new("SETTINGS").font(Theme::font_regular(9.5)))
+                    };
+                    if ui.add(settings_btn).clicked() {
+                        self.left_panel_tab = LeftPanelTab::Settings;
                     }
                 });
 
@@ -1001,6 +1038,15 @@ impl eframe::App for LogicLabApp {
                             self.waveform.sample_circuit(&self.circuit);
                             self.push_undo();
                         }
+                    }
+                    LeftPanelTab::Settings => {
+                        SettingsUi::show_panel(
+                            ui,
+                            &self.updater,
+                            &mut self.theme_mode,
+                            &mut self.canvas.show_grid,
+                            &mut self.canvas.snap_to_grid,
+                        );
                     }
                 }
             });

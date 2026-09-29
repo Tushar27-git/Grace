@@ -217,17 +217,6 @@ impl CanvasState {
                 self.zoom,
                 theme_mode,
             );
-
-            if placement_mode == PlacementMode::Multi {
-                let screen_pos = self.canvas_to_screen(snapped);
-                painter.text(
-                    pos2(screen_pos.x, screen_pos.y - 30.0),
-                    egui::Align2::CENTER_CENTER,
-                    "MULTI (1 Click = 1 Stamp)",
-                    Theme::font_bold(10.0),
-                    Theme::ACCENT_PINK,
-                );
-            }
         }
 
         // 9. Draw Marquee Selection Box

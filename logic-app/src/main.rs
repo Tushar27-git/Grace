@@ -4,8 +4,10 @@ mod glyphs;
 mod hdl_ui;
 mod palette;
 mod properties_ui;
+mod settings_ui;
 mod theme;
 mod tools;
+mod updater;
 mod verification_ui;
 mod waveform;
 
@@ -13,6 +15,8 @@ use app::LogicLabApp;
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    updater::clean_old_updates();
+
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])

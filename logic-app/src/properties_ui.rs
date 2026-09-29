@@ -6,6 +6,7 @@ use logic_core::{Circuit, ComponentId, GateKind, Rotation};
 pub enum LeftPanelTab {
     Components,
     Properties,
+    Settings,
 }
 
 pub struct PropertiesUi;
