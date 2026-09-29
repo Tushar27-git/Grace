@@ -1821,6 +1821,7 @@ impl CanvasState {
                     let arrow_up = ctx.input(|i| i.key_pressed(Key::ArrowUp));
                     let arrow_down = ctx.input(|i| i.key_pressed(Key::ArrowDown));
                     let tab_pressed = ctx.input(|i| i.key_pressed(Key::Tab));
+                    let navigated_by_keyboard = arrow_down || arrow_up || tab_pressed;
 
                     if escape_pressed {
                         close_menu = true;
@@ -1872,15 +1873,12 @@ impl CanvasState {
                                         Sense::click(),
                                     );
 
-                                    if row_resp.hovered() {
-                                        search.selected_index = i;
-                                    }
-
                                     if row_resp.clicked() {
                                         chosen_kind = Some(kind.clone());
                                     }
 
-                                    if is_selected {
+                                    // Only scroll to item when navigated by keyboard keys, not on mouse movement
+                                    if is_selected && navigated_by_keyboard {
                                         row_resp.scroll_to_me(Some(egui::Align::Center));
                                     }
 
@@ -1903,33 +1901,40 @@ impl CanvasState {
                                         ui.painter().rect_filled(ind_rect, CornerRadius::same(2), Theme::ACCENT_PINK);
                                     }
 
-                                    // Badge with short code
+                                    // Badge with short code: surrounded with purple outline, no white bubble
                                     let code = kind.short_code();
                                     let badge_rect = Rect::from_min_size(
                                         Pos2::new(rect.min.x + 8.0, rect.min.y + 4.0),
-                                        Vec2::new(38.0, 18.0),
+                                        Vec2::new(42.0, 18.0),
                                     );
+                                    let badge_stroke = if is_selected {
+                                        Stroke::new(1.2, Theme::ACCENT_PINK)
+                                    } else if row_resp.hovered() {
+                                        Stroke::new(1.2, Theme::ACCENT_PURPLE)
+                                    } else {
+                                        Stroke::new(1.0, Theme::ACCENT_PURPLE.gamma_multiply(0.75))
+                                    };
                                     ui.painter().rect_filled(
                                         badge_rect,
-                                        CornerRadius::same(3),
-                                        Theme::BG_CANVAS,
+                                        CornerRadius::same(4),
+                                        Color32::from_rgba_premultiplied(32, 22, 48, 180),
                                     );
                                     ui.painter().rect_stroke(
                                         badge_rect,
-                                        CornerRadius::same(3),
-                                        Stroke::new(1.0, Theme::ACCENT_PURPLE.gamma_multiply(0.4)),
-                                        egui::StrokeKind::Outside,
+                                        CornerRadius::same(4),
+                                        badge_stroke,
+                                        egui::StrokeKind::Inside,
                                     );
                                     ui.painter().text(
                                         badge_rect.center(),
                                         egui::Align2::CENTER_CENTER,
                                         code,
-                                        Theme::font_bold(9.0),
-                                        Theme::ACCENT_PINK,
+                                        Theme::font_bold(9.5),
+                                        if is_selected { Color32::WHITE } else { Theme::ACCENT_PINK },
                                     );
 
                                     // Display name
-                                    let name_pos = Pos2::new(rect.min.x + 52.0, rect.center().y);
+                                    let name_pos = Pos2::new(rect.min.x + 56.0, rect.center().y);
                                     ui.painter().text(
                                         name_pos,
                                         egui::Align2::LEFT_CENTER,
