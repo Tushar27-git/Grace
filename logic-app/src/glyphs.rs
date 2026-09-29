@@ -53,8 +53,8 @@ impl GlyphRenderer {
                     -32.0 + 12.0 * (1.0 - s * s)
                 }
                 GateKind::Not => -20.0,
-                GateKind::Led => -18.0,
-                GateKind::ToggleSwitch | GateKind::Clock => -20.0,
+                GateKind::Led | GateKind::SingleBitDisplay => -18.0,
+                GateKind::ToggleSwitch | GateKind::BitSwitch | GateKind::Clock => -20.0,
                 _ => -hw,
             };
 
@@ -77,7 +77,7 @@ impl GlyphRenderer {
                 GateKind::Not => 25.0, // right edge of bubble at center 21.5 + radius 3.5
                 GateKind::Nand | GateKind::Nor | GateKind::Xnor => 32.0, // right edge of bubble at center 28.5 + radius 3.5
                 GateKind::And | GateKind::Or | GateKind::Xor => 25.0,    // nose tip of gate
-                GateKind::ToggleSwitch | GateKind::Clock => 20.0,
+                GateKind::ToggleSwitch | GateKind::BitSwitch | GateKind::Clock => 20.0,
                 _ => hw,
             };
 
@@ -201,6 +201,16 @@ impl GlyphRenderer {
                     theme_mode,
                 );
             }
+            GateKind::BitSwitch => {
+                Self::draw_bit_switch(
+                    painter,
+                    &local_to_screen,
+                    comp,
+                    body_stroke,
+                    zoom,
+                    theme_mode,
+                );
+            }
             GateKind::Led => {
                 Self::draw_led(
                     painter,
@@ -213,6 +223,16 @@ impl GlyphRenderer {
             }
             GateKind::Clock => {
                 Self::draw_clock(
+                    painter,
+                    &local_to_screen,
+                    comp,
+                    body_stroke,
+                    zoom,
+                    theme_mode,
+                );
+            }
+            GateKind::SingleBitDisplay => {
+                Self::draw_single_bit_display(
                     painter,
                     &local_to_screen,
                     comp,
@@ -548,6 +568,207 @@ impl GlyphRenderer {
             1.5 * zoom,
             Color32::WHITE.gamma_multiply(0.8),
         );
+
+        // Subtle bit value indicator hovering on switch surface
+        let bit_label = if is_on { "1" } else { "0" };
+        let bit_sz = (8.0 * zoom).clamp(2.0, 16.0);
+        let bit_pos = Pos2::new(
+            if is_on {
+                slot_rect.center().x - 6.0 * zoom
+            } else {
+                slot_rect.center().x + 6.0 * zoom
+            },
+            slot_rect.center().y,
+        );
+        painter.circle_filled(bit_pos, 3.5 * zoom, Theme::ACCENT_PINK.gamma_multiply(0.18));
+        painter.text(
+            bit_pos,
+            egui::Align2::CENTER_CENTER,
+            bit_label,
+            Theme::font_bold(bit_sz),
+            Theme::ACCENT_PINK.gamma_multiply(if is_on { 0.95 } else { 0.75 }),
+        );
+    }
+
+    fn draw_bit_switch(
+        painter: &Painter,
+        local_to_screen: &impl Fn(f32, f32) -> Pos2,
+        comp: &ComponentNode,
+        stroke: Stroke,
+        zoom: f32,
+        theme_mode: ThemeMode,
+    ) {
+        let tl = local_to_screen(-20.0, -15.0);
+        let br = local_to_screen(20.0, 15.0);
+        let min_x = tl.x.min(br.x);
+        let max_x = tl.x.max(br.x);
+        let min_y = tl.y.min(br.y);
+        let max_y = tl.y.max(br.y);
+        let rect = Rect::from_min_max(Pos2::new(min_x, min_y), Pos2::new(max_x, max_y));
+
+        let is_on = comp.state_flag;
+
+        // Base chassis plate
+        painter.rect(
+            rect,
+            CornerRadius::same(5),
+            theme_mode.gate_fill(),
+            stroke,
+            egui::StrokeKind::Inside,
+        );
+
+        // Recessed / illuminated inner digital button tile
+        let inset = 3.0 * zoom;
+        let inner_rect = rect.shrink(inset);
+
+        let (inner_bg, inner_border) = if is_on {
+            (
+                Color32::from_rgb(0x28, 0x0E, 0x22),
+                Stroke::new(1.0 * zoom, Theme::ACCENT_PINK.gamma_multiply(0.7)),
+            )
+        } else {
+            (
+                Color32::from_rgb(0x10, 0x0D, 0x14),
+                Stroke::new(1.0 * zoom, Color32::from_rgb(0x30, 0x26, 0x38)),
+            )
+        };
+
+        painter.rect(
+            inner_rect,
+            CornerRadius::same(3),
+            inner_bg,
+            inner_border,
+            egui::StrokeKind::Inside,
+        );
+
+        // Hovering ambient pink glow behind the digit
+        let digit_center = inner_rect.center();
+        if is_on {
+            painter.circle_filled(
+                digit_center,
+                7.5 * zoom,
+                Theme::ACCENT_PINK.gamma_multiply(0.35),
+            );
+            painter.circle_filled(
+                digit_center,
+                4.5 * zoom,
+                Theme::ACCENT_PINK.gamma_multiply(0.20),
+            );
+        } else {
+            // Soft subtle pink glow for 0
+            painter.circle_filled(
+                digit_center,
+                6.0 * zoom,
+                Theme::ACCENT_PINK.gamma_multiply(0.18),
+            );
+        }
+
+        // Drop shadow / hover depth effect for the glowing text
+        let font_sz = (12.0 * zoom).clamp(2.5, 24.0);
+        let shadow_pos = Pos2::new(digit_center.x + 0.4 * zoom, digit_center.y + 0.7 * zoom);
+        painter.text(
+            shadow_pos,
+            egui::Align2::CENTER_CENTER,
+            if is_on { "1" } else { "0" },
+            Theme::font_bold(font_sz),
+            Color32::from_black_alpha(140),
+        );
+
+        // Floating glowing digit in pink
+        let digit_color = if is_on {
+            Theme::ACCENT_PINK
+        } else {
+            Theme::ACCENT_PINK.gamma_multiply(0.85)
+        };
+        painter.text(
+            digit_center,
+            egui::Align2::CENTER_CENTER,
+            if is_on { "1" } else { "0" },
+            Theme::font_bold(font_sz),
+            digit_color,
+        );
+
+        // Subtle micro status indicator at top-right corner
+        let micro_dot = Pos2::new(rect.max.x - 4.5 * zoom, rect.min.y + 4.5 * zoom);
+        if is_on {
+            painter.circle_filled(micro_dot, 2.2 * zoom, Theme::ACCENT_PINK.gamma_multiply(0.4));
+            painter.circle_filled(micro_dot, 1.4 * zoom, Theme::ACCENT_PINK);
+        } else {
+            painter.circle_filled(micro_dot, 1.2 * zoom, Theme::SIGNAL_LOW);
+        }
+    }
+
+    fn draw_single_bit_display(
+        painter: &Painter,
+        local_to_screen: &impl Fn(f32, f32) -> Pos2,
+        comp: &ComponentNode,
+        stroke: Stroke,
+        zoom: f32,
+        theme_mode: ThemeMode,
+    ) {
+        let tl = local_to_screen(-18.0, -18.0);
+        let br = local_to_screen(18.0, 18.0);
+        let min_x = tl.x.min(br.x);
+        let max_x = tl.x.max(br.x);
+        let min_y = tl.y.min(br.y);
+        let max_y = tl.y.max(br.y);
+        let rect = Rect::from_min_max(Pos2::new(min_x, min_y), Pos2::new(max_x, max_y));
+
+        // Display bezel casing
+        painter.rect(
+            rect,
+            CornerRadius::same(5),
+            theme_mode.gate_fill(),
+            stroke,
+            egui::StrokeKind::Inside,
+        );
+
+        // Dark digital display lens
+        let lens_rect = rect.shrink(3.0 * zoom);
+        painter.rect(
+            lens_rect,
+            CornerRadius::same(3),
+            Color32::from_rgb(0x0A, 0x08, 0x12),
+            Stroke::new(1.0 * zoom, Color32::from_rgb(0x2A, 0x20, 0x36)),
+            egui::StrokeKind::Inside,
+        );
+
+        let in_sig = comp.input_signals.first().copied().unwrap_or(Signal::Zero);
+        let center = lens_rect.center();
+
+        let (text, color, glow_r, glow_alpha) = match in_sig {
+            Signal::One => ("1", Theme::ACCENT_PINK, 9.0 * zoom, 0.35),
+            Signal::Zero => ("0", Theme::ACCENT_PINK.gamma_multiply(0.85), 7.0 * zoom, 0.18),
+            Signal::X => ("X", Theme::SIGNAL_X, 6.0 * zoom, 0.20),
+            Signal::Z => ("-", Theme::SIGNAL_LOW, 4.0 * zoom, 0.10),
+        };
+
+        // Ambient radial glow behind digit
+        painter.circle_filled(
+            center,
+            glow_r,
+            Theme::ACCENT_PINK.gamma_multiply(glow_alpha),
+        );
+
+        // Drop shadow for floating effect
+        let font_sz = (16.0 * zoom).clamp(2.5, 32.0);
+        let shadow_pos = Pos2::new(center.x + 0.5 * zoom, center.y + 0.8 * zoom);
+        painter.text(
+            shadow_pos,
+            egui::Align2::CENTER_CENTER,
+            text,
+            Theme::font_bold(font_sz),
+            Color32::from_black_alpha(150),
+        );
+
+        // Display glowing single-bit character
+        painter.text(
+            center,
+            egui::Align2::CENTER_CENTER,
+            text,
+            Theme::font_bold(font_sz),
+            color,
+        );
     }
 
     fn draw_led(
@@ -735,12 +956,12 @@ impl GlyphRenderer {
             }
         }
         let hex_char = format!("{:X}", val);
-
+        let hex_font_sz = (22.0 * zoom).clamp(2.5, 44.0);
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
             hex_char,
-            Theme::font_bold(24.0 * zoom.clamp(0.6, 1.8)),
+            Theme::font_bold(hex_font_sz),
             Theme::ACCENT_PINK,
         );
     }

@@ -23,7 +23,7 @@ impl PropertiesUi {
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new("PROPERTIES")
-                    .font(Theme::font_bold(13.5))
+                    .font(Theme::font_bold(14.5))
                     .color(Theme::TEXT_PRIMARY),
             );
         });
@@ -70,13 +70,13 @@ impl PropertiesUi {
 
         egui::Window::new(
             RichText::new("COMPONENT PROPERTIES")
-                .font(Theme::font_bold(12.5))
+                .font(Theme::font_bold(15.0))
                 .color(Theme::TEXT_PRIMARY),
         )
         .open(is_open)
         .frame(modal_frame)
         .resizable(true)
-        .default_size(Vec2::new(280.0, 380.0))
+        .default_size(Vec2::new(330.0, 430.0))
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-20.0, 60.0))
         .show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -92,7 +92,7 @@ impl PropertiesUi {
         ui.vertical_centered(|ui| {
             ui.label(
                 RichText::new("CIRCUIT OVERVIEW")
-                    .font(Theme::font_bold(11.0))
+                    .font(Theme::font_bold(12.0))
                     .color(Theme::ACCENT_PURPLE),
             );
             ui.add_space(8.0);
@@ -185,12 +185,12 @@ impl PropertiesUi {
             ui.vertical(|ui| {
                 ui.label(
                     RichText::new(comp.kind.display_name())
-                        .font(Theme::font_bold(12.5))
+                        .font(Theme::font_bold(14.0))
                         .color(Theme::TEXT_PRIMARY),
                 );
                 ui.label(
                     RichText::new(format!("Pos: ({:.0}, {:.0})", comp.pos.0, comp.pos.1))
-                        .font(Theme::font_regular(10.0))
+                        .font(Theme::font_regular(11.0))
                         .color(Theme::TEXT_MUTED),
                 );
             });
@@ -203,7 +203,7 @@ impl PropertiesUi {
         // 2. Custom Label
         ui.label(
             RichText::new("LABEL / DESIGNATOR")
-                .font(Theme::font_bold(10.0))
+                .font(Theme::font_bold(11.0))
                 .color(Theme::ACCENT_PURPLE),
         );
         ui.add_space(2.0);
@@ -221,7 +221,7 @@ impl PropertiesUi {
         // 3. Direction / Orientation (East, South, West, North)
         ui.label(
             RichText::new("DIRECTION / ORIENTATION")
-                .font(Theme::font_bold(10.0))
+                .font(Theme::font_bold(11.0))
                 .color(Theme::ACCENT_PURPLE),
         );
         ui.add_space(3.0);
@@ -380,7 +380,7 @@ impl PropertiesUi {
 
         // 7. Component Specific Controls
         match comp.kind {
-            GateKind::ToggleSwitch => {
+            GateKind::ToggleSwitch | GateKind::BitSwitch => {
                 ui.label(
                     RichText::new("SWITCH STATE")
                         .font(Theme::font_bold(10.0))
@@ -407,6 +407,32 @@ impl PropertiesUi {
                     }
                     mutated = true;
                 }
+                ui.add_space(10.0);
+            }
+            GateKind::SingleBitDisplay => {
+                ui.label(
+                    RichText::new("CURRENT BIT VALUE")
+                        .font(Theme::font_bold(10.0))
+                        .color(Theme::ACCENT_PURPLE),
+                );
+                ui.add_space(2.0);
+                let sig = comp.input_signals.first().copied().unwrap_or(logic_core::Signal::Zero);
+                let bit_str = match sig {
+                    logic_core::Signal::Zero => "0 (LOW)",
+                    logic_core::Signal::One => "1 (HIGH)",
+                    logic_core::Signal::X => "X (UNDEFINED)",
+                    logic_core::Signal::Z => "Z (HIGH-Z)",
+                };
+                let col = if sig.is_high() {
+                    Theme::ACCENT_PINK
+                } else {
+                    Theme::TEXT_MUTED
+                };
+                ui.label(
+                    RichText::new(bit_str)
+                        .font(Theme::font_bold(12.0))
+                        .color(col),
+                );
                 ui.add_space(10.0);
             }
             GateKind::Clock => {

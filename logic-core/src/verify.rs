@@ -171,11 +171,11 @@ impl CircuitIO {
             }
 
             match comp.kind {
-                GateKind::ToggleSwitch => {
+                GateKind::ToggleSwitch | GateKind::BitSwitch => {
                     let label = format!("IN_{}", input_switches.len());
                     input_switches.push((id, label));
                 }
-                GateKind::Led => {
+                GateKind::Led | GateKind::SingleBitDisplay => {
                     let label = format!("OUT_{}", output_leds.len());
                     output_leds.push((id, label));
                 }
@@ -287,7 +287,7 @@ impl TruthTableGenerator {
                 row_inputs.push(sig);
 
                 if let Some(comp) = sim_circuit.components.get_mut(*sw_id) {
-                    if comp.kind == GateKind::ToggleSwitch {
+                    if comp.kind == GateKind::ToggleSwitch || comp.kind == GateKind::BitSwitch {
                         comp.state_flag = bit_val;
                     } else if comp.input_signals.len() > bit_idx {
                         comp.input_signals[bit_idx] = sig;
@@ -301,7 +301,7 @@ impl TruthTableGenerator {
             let mut row_outputs = Vec::with_capacity(io.output_leds.len());
             for (led_id, _) in &io.output_leds {
                 if let Some(comp) = sim_circuit.components.get(*led_id) {
-                    let out_sig = if comp.kind == GateKind::Led {
+                    let out_sig = if comp.kind == GateKind::Led || comp.kind == GateKind::SingleBitDisplay {
                         comp.input_signals.first().copied().unwrap_or(Signal::Zero)
                     } else {
                         comp.output_signals.first().copied().unwrap_or(Signal::Zero)

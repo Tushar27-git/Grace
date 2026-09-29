@@ -175,8 +175,8 @@ impl ComponentNode {
 
     pub fn half_dimensions(&self) -> (f32, f32) {
         match self.kind {
-            GateKind::ToggleSwitch | GateKind::Clock => (20.0, 15.0),
-            GateKind::Led => (18.0, 18.0),
+            GateKind::ToggleSwitch | GateKind::BitSwitch | GateKind::Clock => (20.0, 15.0),
+            GateKind::Led | GateKind::SingleBitDisplay => (18.0, 18.0),
             GateKind::BinaryDisplay4 => (40.0, 18.0),
             GateKind::HexDisplay => (25.0, 25.0),
             GateKind::SevenSegment => (25.0, 35.0),

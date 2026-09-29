@@ -3,8 +3,8 @@ use egui::{Color32, CornerRadius, Stroke, Visuals};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum ThemeMode {
     #[default]
-    Light,
     Dark,
+    Light,
 }
 
 impl ThemeMode {
@@ -14,29 +14,29 @@ impl ThemeMode {
 
     pub fn toggle(&mut self) {
         *self = match self {
-            ThemeMode::Light => ThemeMode::Dark,
             ThemeMode::Dark => ThemeMode::Light,
+            ThemeMode::Light => ThemeMode::Dark,
         };
     }
 
     pub fn label(&self) -> &'static str {
         match self {
-            ThemeMode::Light => "Light (Warm Paper)",
             ThemeMode::Dark => "Dark (Cyber Dark)",
+            ThemeMode::Light => "Light (Warm Paper)",
         }
     }
 
     pub fn bg_canvas(&self) -> Color32 {
         match self {
-            ThemeMode::Light => Color32::from_rgb(0xF4, 0xF1, 0xEC), // Warm drafting paper
             ThemeMode::Dark => Color32::from_rgb(0x0F, 0x0D, 0x12),  // Matte cyber dark
+            ThemeMode::Light => Color32::from_rgb(0xF4, 0xF1, 0xEC), // Warm drafting paper
         }
     }
 
     pub fn grid_line(&self) -> Color32 {
         match self {
-            ThemeMode::Light => Color32::from_rgb(0xDD, 0xD8, 0xCE), // Subtle paper grid dots
-            ThemeMode::Dark => Color32::from_rgb(0x28, 0x22, 0x30),  // Deep violet cyber grid dots
+            ThemeMode::Dark => Color32::from_rgb(0x48, 0x3D, 0x58).gamma_multiply(0.75), // 25% less opacity
+            ThemeMode::Light => Color32::from_rgb(0xB8, 0xAF, 0x9E).gamma_multiply(0.75), // 25% less opacity
         }
     }
 
@@ -207,20 +207,21 @@ pub fn setup_custom_fonts(ctx: &egui::Context) {
         let mut style = (*ctx.style_of(egui_theme)).clone();
         style.text_styles.insert(
             egui::TextStyle::Heading,
-            egui::FontId::new(17.0, egui::FontFamily::Name("SpaceGrotesk-Bold".into())),
+            egui::FontId::new(20.5, egui::FontFamily::Name("SpaceGrotesk-Bold".into())),
         );
         style.text_styles.insert(
             egui::TextStyle::Button,
-            egui::FontId::new(12.5, egui::FontFamily::Name("SpaceGrotesk-Medium".into())),
+            egui::FontId::new(14.5, egui::FontFamily::Name("SpaceGrotesk-Medium".into())),
         );
         style.text_styles.insert(
             egui::TextStyle::Body,
-            egui::FontId::new(12.5, egui::FontFamily::Proportional),
+            egui::FontId::new(14.5, egui::FontFamily::Proportional),
         );
         style.text_styles.insert(
             egui::TextStyle::Small,
-            egui::FontId::new(10.5, egui::FontFamily::Proportional),
+            egui::FontId::new(12.0, egui::FontFamily::Proportional),
         );
+        style.spacing.button_padding = egui::Vec2::new(9.0, 6.0);
         ctx.set_style_of(egui_theme, style);
     }
 }

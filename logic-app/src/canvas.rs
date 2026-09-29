@@ -234,25 +234,57 @@ impl CanvasState {
 
     fn draw_grid(&self, painter: &Painter, rect: Rect, theme_mode: ThemeMode) {
         let step = Self::GRID_SPACING * self.zoom;
-        if step < 6.0 {
-            return; // Don't draw if too small
+        if step < 5.0 {
+            return;
         }
 
-        let start_x = (rect.min.x - self.pan.x) % step + rect.min.x;
-        let start_y = (rect.min.y - self.pan.y) % step + rect.min.y;
+        // Adaptive stride so dots remain crisp without moiré or lag when zoomed out
+        let stride = if self.zoom < 0.35 {
+            4
+        } else if self.zoom < 0.7 {
+            2
+        } else {
+            1
+        };
 
-        let dot_radius = (1.0 * self.zoom).clamp(0.6, 1.8);
+        let spacing = Self::GRID_SPACING * stride as f32;
 
-        let mut y = start_y - step;
-        while y <= rect.max.y + step {
-            let mut x = start_x - step;
-            while x <= rect.max.x + step {
-                if rect.contains(Pos2::new(x, y)) {
-                    painter.circle_filled(Pos2::new(x, y), dot_radius, theme_mode.grid_line());
+        // Map visible screen rect to canvas coordinate space
+        let c_min = self.screen_to_canvas(rect.min);
+        let c_max = self.screen_to_canvas(rect.max);
+
+        let min_x = c_min.x.min(c_max.x);
+        let max_x = c_min.x.max(c_max.x);
+        let min_y = c_min.y.min(c_max.y);
+        let max_y = c_min.y.max(c_max.y);
+
+        let start_col = (min_x / spacing).floor() as i32;
+        let end_col = (max_x / spacing).ceil() as i32;
+        let start_row = (min_y / spacing).floor() as i32;
+        let end_row = (max_y / spacing).ceil() as i32;
+
+        let base_radius = (1.3 * self.zoom * stride as f32).clamp(1.0, 2.5);
+        let grid_color = theme_mode.grid_line();
+        let major_color = if theme_mode.is_dark() {
+            Theme::ACCENT_PURPLE.gamma_multiply(0.60)
+        } else {
+            Color32::from_rgb(0x8C, 0x80, 0x70).gamma_multiply(0.75)
+        };
+
+        for col in start_col..=end_col {
+            let canvas_x = col as f32 * spacing;
+            let is_major_x = (col * stride) % 5 == 0;
+            for row in start_row..=end_row {
+                let canvas_y = row as f32 * spacing;
+                let is_major = is_major_x && (row * stride) % 5 == 0;
+
+                let screen_pos = self.canvas_to_screen(Pos2::new(canvas_x, canvas_y));
+                if rect.contains(screen_pos) {
+                    let r = if is_major { base_radius + 0.5 } else { base_radius };
+                    let color = if is_major { major_color } else { grid_color };
+                    painter.circle_filled(screen_pos, r, color);
                 }
-                x += step;
             }
-            y += step;
         }
     }
 
@@ -494,7 +526,7 @@ impl CanvasState {
         if response.clicked_by(egui::PointerButton::Primary) && !self.is_dragging_components {
             if let Some(comp_id) = self.hovered_component {
                 if let Some(comp) = circuit.components.get_mut(comp_id)
-                    && comp.kind == GateKind::ToggleSwitch
+                    && (comp.kind == GateKind::ToggleSwitch || comp.kind == GateKind::BitSwitch)
                 {
                     // User clicked toggle switch -> flip and simulate!
                     comp.state_flag = !comp.state_flag;

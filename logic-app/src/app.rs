@@ -51,7 +51,7 @@ impl LogicLabApp {
             new_subcircuit_name: String::new(),
             waveform: WaveformState::default(),
             hdl_ui: HdlUiState::default(),
-            theme_mode: ThemeMode::Light,
+            theme_mode: ThemeMode::Dark,
             left_panel_tab: LeftPanelTab::Components,
             show_properties_window: true,
         }
@@ -303,13 +303,13 @@ impl LogicLabApp {
         let input_count = sub_circuit
             .components
             .iter()
-            .filter(|(_, c)| matches!(c.kind, GateKind::ToggleSwitch | GateKind::Clock))
+            .filter(|(_, c)| matches!(c.kind, GateKind::ToggleSwitch | GateKind::BitSwitch | GateKind::Clock))
             .count()
             .max(1);
         let output_count = sub_circuit
             .components
             .iter()
-            .filter(|(_, c)| c.kind == GateKind::Led)
+            .filter(|(_, c)| matches!(c.kind, GateKind::Led | GateKind::SingleBitDisplay))
             .count()
             .max(1);
 
@@ -473,12 +473,15 @@ impl eframe::App for LogicLabApp {
         });
 
         // 1. Top Menu & Navigation Bar
-        let top_frame = Theme::glass_panel();
+        let mut top_frame = Theme::glass_panel();
+        top_frame.inner_margin = egui::Margin::symmetric(14, 9);
         Panel::top("top_toolbar").frame(top_frame).show(ui, |ui| {
+            ui.spacing_mut().item_spacing = egui::Vec2::new(10.0, 0.0);
+            ui.spacing_mut().button_padding = egui::Vec2::new(11.0, 6.0);
             ui.horizontal(|ui| {
                 ui.label(
                     RichText::new("LOGIC LAB")
-                        .font(Theme::font_bold(14.5))
+                        .font(Theme::font_bold(17.5))
                         .color(Theme::ACCENT_PINK),
                 );
 
@@ -688,7 +691,7 @@ impl eframe::App for LogicLabApp {
                     if ui
                         .button(
                             RichText::new(theme_txt)
-                                .font(Theme::font_bold(10.5))
+                                .font(Theme::font_bold(12.5))
                                 .color(Theme::ACCENT_PINK),
                         )
                         .on_hover_text("Toggle Theme (Ctrl+T / F8)")
@@ -708,7 +711,7 @@ impl eframe::App for LogicLabApp {
                     if ui
                         .button(
                             RichText::new(clk_text)
-                                .font(Theme::font_bold(10.5))
+                                .font(Theme::font_bold(12.5))
                                 .color(clk_color),
                         )
                         .on_hover_text("Click to toggle clock run/pause")
@@ -724,7 +727,7 @@ impl eframe::App for LogicLabApp {
                     if ui
                         .button(
                             RichText::new(zoom_text)
-                                .font(Theme::font_bold(10.5))
+                                .font(Theme::font_bold(12.5))
                                 .color(Theme::ACCENT_PURPLE),
                         )
                         .on_hover_text("Click to reset zoom to 100%")
@@ -741,7 +744,7 @@ impl eframe::App for LogicLabApp {
                         if ui
                             .button(
                                 RichText::new(sel_lbl)
-                                    .font(Theme::font_bold(10.5))
+                                    .font(Theme::font_bold(12.5))
                                     .color(Theme::ACCENT_PINK),
                             )
                             .on_hover_text("Click to package selection into subcircuit (Ctrl+G)")
@@ -764,7 +767,7 @@ impl eframe::App for LogicLabApp {
                             if ui
                                 .button(
                                     RichText::new("PROPERTIES")
-                                        .font(Theme::font_bold(10.5))
+                                        .font(Theme::font_bold(12.5))
                                         .color(prop_col),
                                 )
                                 .on_hover_text("Open Component Properties (P)")
@@ -828,15 +831,16 @@ impl eframe::App for LogicLabApp {
         }
 
         // 2. Bottom Status Bar Panel
-        let bottom_frame = Theme::glass_panel();
+        let mut bottom_frame = Theme::glass_panel();
+        bottom_frame.inner_margin = egui::Margin::symmetric(14, 8);
         Panel::bottom("bottom_status_bar")
             .frame(bottom_frame)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new(&self.status_message)
-                            .color(Theme::TEXT_PRIMARY)
-                            .size(12.0),
+                            .font(Theme::font_medium(13.5))
+                            .color(Theme::TEXT_PRIMARY),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
@@ -847,8 +851,8 @@ impl eframe::App for LogicLabApp {
                                 self.canvas.zoom * 100.0,
                                 self.theme_mode.label()
                             ))
-                            .color(Theme::ACCENT_PURPLE)
-                            .size(11.0),
+                            .font(Theme::font_medium(13.0))
+                            .color(Theme::ACCENT_PURPLE),
                         );
                     });
                 });

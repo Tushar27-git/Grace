@@ -194,7 +194,7 @@ impl Simulator {
             }
 
             // 2. Fundamental I/O & Displays
-            GateKind::ToggleSwitch | GateKind::Clock => {
+            GateKind::ToggleSwitch | GateKind::BitSwitch | GateKind::Clock => {
                 vec![if comp.state_flag {
                     Signal::One
                 } else {
@@ -202,6 +202,7 @@ impl Simulator {
                 }]
             }
             GateKind::Led
+            | GateKind::SingleBitDisplay
             | GateKind::BinaryDisplay4
             | GateKind::HexDisplay
             | GateKind::SevenSegment => {

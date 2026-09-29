@@ -47,7 +47,9 @@ impl WaveformState {
                 comp.kind,
                 GateKind::Clock
                     | GateKind::ToggleSwitch
+                    | GateKind::BitSwitch
                     | GateKind::Led
+                    | GateKind::SingleBitDisplay
                     | GateKind::DFlipFlop
                     | GateKind::JkFlipFlop
                     | GateKind::TFlipFlop

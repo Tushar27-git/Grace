@@ -39,10 +39,12 @@ pub enum GateKind {
 
     // 2. Fundamental I/O
     ToggleSwitch,
+    BitSwitch,
     Led,
     Clock,
 
     // 3. Displays
+    SingleBitDisplay,
     BinaryDisplay4,
     HexDisplay,
     SevenSegment,
@@ -93,8 +95,10 @@ impl GateKind {
             GateKind::Xor => "XOR Gate".into(),
             GateKind::Xnor => "XNOR Gate".into(),
             GateKind::ToggleSwitch => "Toggle Switch".into(),
+            GateKind::BitSwitch => "Bit Switch".into(),
             GateKind::Led => "LED".into(),
             GateKind::Clock => "Clock Source".into(),
+            GateKind::SingleBitDisplay => "Single-Bit Display".into(),
             GateKind::BinaryDisplay4 => "4-Bit Binary Display".into(),
             GateKind::HexDisplay => "Hex Display".into(),
             GateKind::SevenSegment => "7-Segment Display".into(),
@@ -137,8 +141,10 @@ impl GateKind {
             GateKind::Xor => "XOR".into(),
             GateKind::Xnor => "XNOR".into(),
             GateKind::ToggleSwitch => "SW".into(),
+            GateKind::BitSwitch => "BSW".into(),
             GateKind::Led => "LED".into(),
             GateKind::Clock => "CLK".into(),
+            GateKind::SingleBitDisplay => "1BIT".into(),
             GateKind::BinaryDisplay4 => "BIN4".into(),
             GateKind::HexDisplay => "HEX".into(),
             GateKind::SevenSegment => "7SEG".into(),
@@ -183,8 +189,13 @@ impl GateKind {
             | GateKind::Nor
             | GateKind::Xor
             | GateKind::Xnor => "Logic Gates",
-            GateKind::ToggleSwitch | GateKind::Led | GateKind::Clock => "Input / Output",
-            GateKind::BinaryDisplay4 | GateKind::HexDisplay | GateKind::SevenSegment => "Displays",
+            GateKind::ToggleSwitch | GateKind::BitSwitch | GateKind::Led | GateKind::Clock => {
+                "Input / Output"
+            }
+            GateKind::SingleBitDisplay
+            | GateKind::BinaryDisplay4
+            | GateKind::HexDisplay
+            | GateKind::SevenSegment => "Displays",
             GateKind::HalfAdder
             | GateKind::FullAdder
             | GateKind::HalfSubtractor
@@ -214,8 +225,8 @@ impl GateKind {
 
     pub fn input_count(&self) -> usize {
         match self {
-            GateKind::ToggleSwitch | GateKind::Clock => 0,
-            GateKind::Not | GateKind::Led => 1,
+            GateKind::ToggleSwitch | GateKind::BitSwitch | GateKind::Clock => 0,
+            GateKind::Not | GateKind::Led | GateKind::SingleBitDisplay => 1,
             GateKind::And
             | GateKind::Or
             | GateKind::Nand
@@ -254,6 +265,7 @@ impl GateKind {
     pub fn output_count(&self) -> usize {
         match self {
             GateKind::Led
+            | GateKind::SingleBitDisplay
             | GateKind::BinaryDisplay4
             | GateKind::HexDisplay
             | GateKind::SevenSegment => 0,
@@ -265,6 +277,7 @@ impl GateKind {
             | GateKind::Xor
             | GateKind::Xnor
             | GateKind::ToggleSwitch
+            | GateKind::BitSwitch
             | GateKind::Clock
             | GateKind::Mux2
             | GateKind::Mux4 => 1,
@@ -323,7 +336,7 @@ impl GateKind {
                 _ => "B",
             },
             GateKind::Not => "A",
-            GateKind::Led => "IN",
+            GateKind::Led | GateKind::SingleBitDisplay => "IN",
             GateKind::HalfAdder | GateKind::HalfSubtractor => match idx {
                 0 => "A",
                 _ => "B",
@@ -406,6 +419,7 @@ impl GateKind {
             | GateKind::Xor
             | GateKind::Xnor
             | GateKind::ToggleSwitch
+            | GateKind::BitSwitch
             | GateKind::Mux2
             | GateKind::Mux4 => "Q",
             GateKind::Clock => "CLK",

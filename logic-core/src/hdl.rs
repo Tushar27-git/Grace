@@ -469,9 +469,9 @@ impl HdlExporter {
 
         for (id, comp) in &circuit.components {
             match comp.kind {
-                GateKind::ToggleSwitch => inputs.push((id, "sw".to_string())),
+                GateKind::ToggleSwitch | GateKind::BitSwitch => inputs.push((id, "sw".to_string())),
                 GateKind::Clock => inputs.push((id, "clk".to_string())),
-                GateKind::Led => outputs.push((id, "led".to_string())),
+                GateKind::Led | GateKind::SingleBitDisplay => outputs.push((id, "out".to_string())),
                 _ => {}
             }
         }

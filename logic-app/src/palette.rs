@@ -16,9 +16,10 @@ impl Palette {
     ];
 
     pub const ALL_IO: &'static [GateKind] =
-        &[GateKind::ToggleSwitch, GateKind::Led, GateKind::Clock];
+        &[GateKind::ToggleSwitch, GateKind::BitSwitch, GateKind::Led, GateKind::Clock];
 
     pub const ALL_DISPLAYS: &'static [GateKind] = &[
+        GateKind::SingleBitDisplay,
         GateKind::BinaryDisplay4,
         GateKind::HexDisplay,
         GateKind::SevenSegment,
@@ -505,6 +506,43 @@ impl Palette {
                 painter.circle_filled(egui::pos2(c.x + 3.5, c.y - 3.0), 1.8, stroke.color);
                 // Status dot
                 painter.circle_filled(egui::pos2(c.x - 4.0, c.y), 1.4, Theme::ACCENT_PINK);
+            }
+            GateKind::BitSwitch => {
+                let plate = egui::Rect::from_center_size(c, Vec2::new(14.0, 11.0));
+                painter.rect_filled(plate, CornerRadius::same(2), fill_bg);
+                painter.rect_stroke(
+                    plate,
+                    CornerRadius::same(2),
+                    stroke,
+                    egui::StrokeKind::Inside,
+                );
+                // Glowing pink '0' hovering in center
+                painter.circle_filled(c, 3.5, Theme::ACCENT_PINK.gamma_multiply(0.25));
+                painter.text(
+                    c,
+                    egui::Align2::CENTER_CENTER,
+                    "0",
+                    Theme::font_bold(8.0),
+                    Theme::ACCENT_PINK,
+                );
+            }
+            GateKind::SingleBitDisplay => {
+                let r = egui::Rect::from_center_size(c, Vec2::new(13.0, 13.0));
+                painter.rect_filled(r, CornerRadius::same(2), fill_bg);
+                painter.rect_stroke(
+                    r,
+                    CornerRadius::same(2),
+                    stroke,
+                    egui::StrokeKind::Inside,
+                );
+                painter.circle_filled(c, 4.0, Theme::ACCENT_PINK.gamma_multiply(0.25));
+                painter.text(
+                    c,
+                    egui::Align2::CENTER_CENTER,
+                    "1",
+                    Theme::font_bold(8.5),
+                    Theme::ACCENT_PINK,
+                );
             }
             GateKind::Led => {
                 painter.circle(c, 5.0, fill_bg, stroke);
