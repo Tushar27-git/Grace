@@ -997,6 +997,7 @@ impl eframe::App for LogicLabApp {
         // 5. Central Canvas Panel
         let central_frame = Frame::central_panel(ui.style()).fill(self.theme_mode.bg_canvas());
         CentralPanel::default().frame(central_frame).show(ui, |ui| {
+            let pre_circuit = self.circuit.clone();
             let canvas_res = self.canvas.show(
                 ui,
                 &mut self.circuit,
@@ -1016,8 +1017,12 @@ impl eframe::App for LogicLabApp {
                 self.waveform.sample_circuit(&self.circuit);
             }
             if canvas_res.placed_component || canvas_res.circuit_mutated {
+                self.undo_stack.push(pre_circuit);
+                if self.undo_stack.len() > 100 {
+                    self.undo_stack.remove(0);
+                }
+                self.redo_stack.clear();
                 self.waveform.sample_circuit(&self.circuit);
-                self.push_undo();
             }
         });
 

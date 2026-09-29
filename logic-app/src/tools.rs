@@ -75,3 +75,13 @@ pub struct MarqueeState {
     pub start: Pos2,
     pub current: Pos2,
 }
+
+#[derive(Debug, Clone)]
+pub struct WireDropSearchState {
+    pub source_endpoint: PortEndpoint,
+    pub source_canvas_pos: Pos2,
+    pub drop_canvas_pos: Pos2,
+    pub search_query: String,
+    pub selected_index: usize,
+    pub request_focus: bool,
+}

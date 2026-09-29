@@ -1,6 +1,6 @@
 use crate::glyphs::GlyphRenderer;
 use crate::theme::{Theme, ThemeMode};
-use crate::tools::{ActiveTool, MarqueeState, SelectionState, WireInProgress};
+use crate::tools::{ActiveTool, MarqueeState, SelectionState, WireDropSearchState, WireInProgress};
 use eframe::egui::{
     self, Color32, CornerRadius, CursorIcon, Key, Painter, Pos2, Rect, Response, Sense, Stroke,
     Ui, Vec2, pos2,
@@ -15,6 +15,7 @@ pub struct CanvasState {
     pub active_tool: ActiveTool,
     pub selection: SelectionState,
     pub wire_in_progress: Option<WireInProgress>,
+    pub wire_drop_search: Option<WireDropSearchState>,
     pub marquee: Option<MarqueeState>,
     pub hovered_component: Option<ComponentId>,
     pub hovered_port: Option<(PortEndpoint, Pos2)>,
@@ -33,6 +34,7 @@ impl Default for CanvasState {
             active_tool: ActiveTool::Normal,
             selection: SelectionState::default(),
             wire_in_progress: None,
+            wire_drop_search: None,
             marquee: None,
             hovered_component: None,
             hovered_port: None,
@@ -126,7 +128,7 @@ impl CanvasState {
         // 5. Draw Wires and Nets
         self.draw_wires(&painter, circuit, theme_mode);
 
-        // 6. Draw In-Progress Wire
+        // 6. Draw In-Progress Wire or Wire-Drop live wire
         if let Some(wip) = &self.wire_in_progress {
             let start = wip.source_pos;
             let end = if let Some((endpoint, port_screen_pos)) = self.hovered_port {
@@ -156,6 +158,29 @@ impl CanvasState {
                     Theme::ACCENT_PINK.gamma_multiply(0.45),
                 );
             }
+        } else if let Some(search) = &self.wire_drop_search {
+            // Live wire leading to Blender-style quick-add drop target
+            let start_canvas = circuit
+                .components
+                .get(search.source_endpoint.component_id)
+                .map(|comp| {
+                    let wpos = comp.port_world_pos(
+                        search.source_endpoint.is_output,
+                        search.source_endpoint.port_index,
+                    );
+                    Pos2::new(wpos.0, wpos.1)
+                })
+                .unwrap_or(search.source_canvas_pos);
+            let start = self.canvas_to_screen(start_canvas);
+            let end = self.canvas_to_screen(search.drop_canvas_pos);
+            let wire_w = (2.5 * self.zoom).clamp(2.0, 4.0);
+            self.draw_bezier_wire(&painter, start, end, Theme::ACCENT_PINK, wire_w);
+            // Source terminal dot
+            painter.circle_filled(start, 4.5, Theme::ACCENT_PINK);
+            // Target drop halo and point
+            painter.circle_stroke(end, 9.0, Stroke::new(2.0, Color32::WHITE));
+            painter.circle_filled(end, 7.0, Theme::ACCENT_PINK.gamma_multiply(0.5));
+            painter.circle_filled(end, 4.5, Color32::WHITE);
         }
 
         // 7. Draw Components via Glyphs
@@ -255,6 +280,9 @@ impl CanvasState {
 
         // 12. Floating Right Toolbar Dock (Tools & Zoom Slider & Actions)
         self.show_right_toolbar(ui.ctx(), rect, &mut response_meta);
+
+        // 13. Blender-style Quick-Add Search Menu when wire dropped in air
+        self.show_wire_drop_search_menu(ui.ctx(), rect, circuit, &mut response_meta);
 
         response_meta
     }
@@ -535,7 +563,13 @@ impl CanvasState {
         {
             *selected_for_placement = None;
             self.wire_in_progress = None;
+            self.wire_drop_search = None;
             self.marquee = None;
+            return;
+        }
+
+        // If wire-drop quick-add search is currently active, suspend background canvas interactions
+        if self.wire_drop_search.is_some() {
             return;
         }
 
@@ -569,6 +603,7 @@ impl CanvasState {
             if mouse_released || mouse_clicked {
                 let source_endpoint = wip.source_endpoint;
                 let current_cursor = wip.current_cursor;
+                let source_pos = wip.source_pos;
                 self.wire_in_progress = None; // Reset before querying self
 
                 // Find target port: from self.hovered_port, or fallback search for closest compatible port to cursor
@@ -598,6 +633,18 @@ impl CanvasState {
                             meta.circuit_mutated = true;
                         }
                     }
+                } else if current_cursor.distance(source_pos) > 15.0 {
+                    // Blender-style quick-add search: wire released in air!
+                    let drop_canvas = self.screen_to_canvas(current_cursor);
+                    let source_canvas = self.screen_to_canvas(source_pos);
+                    self.wire_drop_search = Some(WireDropSearchState {
+                        source_endpoint,
+                        source_canvas_pos: source_canvas,
+                        drop_canvas_pos: drop_canvas,
+                        search_query: String::new(),
+                        selected_index: 0,
+                        request_focus: true,
+                    });
                 }
                 return;
             }
@@ -1560,5 +1607,522 @@ impl CanvasState {
         for w in pts.windows(2) {
             painter.line_segment([w[0], w[1]], Stroke::new(width, color));
         }
+    }
+
+    pub fn get_wire_search_candidates(
+        source_is_output: bool,
+        subcircuits: &[String],
+    ) -> Vec<GateKind> {
+        let mut all: Vec<GateKind> = vec![
+            // Logic Gates
+            GateKind::And,
+            GateKind::Or,
+            GateKind::Not,
+            GateKind::Nand,
+            GateKind::Nor,
+            GateKind::Xor,
+            GateKind::Xnor,
+            // Input / Output
+            GateKind::ToggleSwitch,
+            GateKind::BitSwitch,
+            GateKind::Led,
+            GateKind::Clock,
+            // Displays
+            GateKind::SingleBitDisplay,
+            GateKind::BinaryDisplay4,
+            GateKind::HexDisplay,
+            GateKind::SevenSegment,
+            // Arithmetic
+            GateKind::HalfAdder,
+            GateKind::FullAdder,
+            GateKind::HalfSubtractor,
+            GateKind::FullSubtractor,
+            GateKind::RippleCarryAdder4,
+            GateKind::CarryLookaheadAdder4,
+            // Sequential
+            GateKind::SrLatch,
+            GateKind::DLatch,
+            GateKind::DFlipFlop,
+            GateKind::JkFlipFlop,
+            GateKind::TFlipFlop,
+            GateKind::Register4,
+            GateKind::ShiftRegister4,
+            GateKind::Counter4,
+            GateKind::ClockDivider,
+            // Routing & Selection
+            GateKind::Mux2,
+            GateKind::Mux4,
+            GateKind::Demux2,
+            GateKind::Demux4,
+            GateKind::Encoder4to2,
+            GateKind::Decoder2to4,
+            GateKind::Comparator2,
+            // Computer Blocks
+            GateKind::Alu4,
+            GateKind::Rom16x4,
+            GateKind::Ram16x4,
+        ];
+
+        for name in subcircuits {
+            all.push(GateKind::SubcircuitInstance(name.clone()));
+        }
+
+        all.into_iter()
+            .filter(|k| {
+                if source_is_output {
+                    k.input_count() > 0
+                } else {
+                    k.output_count() > 0
+                }
+            })
+            .collect()
+    }
+
+    pub fn score_component(kind: &GateKind, query: &str) -> Option<u32> {
+        let q = query.trim().to_lowercase();
+        if q.is_empty() {
+            return Some(100);
+        }
+        let name = kind.display_name().to_lowercase();
+        let code = kind.short_code().to_lowercase();
+        let cat = kind.category().to_lowercase();
+
+        // 0: Exact match on short code or full name (highest priority)
+        if code == q || name == q {
+            return Some(0);
+        }
+        // 1: Name or short code starts with query
+        if code.starts_with(&q) || name.starts_with(&q) {
+            return Some(1);
+        }
+        // 2: Any individual word in the name starts with query (e.g. "Gate", "Adder", "Switch")
+        if name.split(|c: char| !c.is_alphanumeric()).any(|word| word.starts_with(&q)) {
+            return Some(2);
+        }
+        // 3: Substring in short code or full name
+        if code.contains(&q) || name.contains(&q) {
+            return Some(3);
+        }
+        // 4: Category contains query
+        if cat.contains(&q) {
+            return Some(4);
+        }
+        None
+    }
+
+    fn show_wire_drop_search_menu(
+        &mut self,
+        ctx: &egui::Context,
+        canvas_rect: Rect,
+        circuit: &mut Circuit,
+        meta: &mut CanvasResponse,
+    ) {
+        let Some(mut search) = self.wire_drop_search.take() else {
+            return;
+        };
+
+        let subcircuits: Vec<String> = circuit.subcircuits.keys().cloned().collect();
+        let candidates = Self::get_wire_search_candidates(search.source_endpoint.is_output, &subcircuits);
+
+        // Filter and score candidates
+        let mut scored: Vec<(u32, usize, GateKind)> = candidates
+            .into_iter()
+            .enumerate()
+            .filter_map(|(orig_idx, kind)| {
+                Self::score_component(&kind, &search.search_query)
+                    .map(|score| (score, orig_idx, kind))
+            })
+            .collect();
+
+        // Sort by score ascending, then original index
+        scored.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+
+        let filtered_kinds: Vec<GateKind> = scored.into_iter().map(|(_, _, k)| k).collect();
+
+        // Clamp selected index
+        if search.selected_index >= filtered_kinds.len() {
+            search.selected_index = filtered_kinds.len().saturating_sub(1);
+        }
+
+        let mut close_menu = false;
+        let mut chosen_kind: Option<GateKind> = None;
+        let just_opened = search.request_focus;
+
+        let drop_screen = self.canvas_to_screen(search.drop_canvas_pos);
+        let popup_w = 280.0;
+        let popup_h = 320.0;
+
+        let mut popup_pos = drop_screen + Vec2::new(14.0, -20.0);
+        if popup_pos.x + popup_w > canvas_rect.max.x - 12.0 {
+            popup_pos.x = (drop_screen.x - popup_w - 14.0).max(canvas_rect.min.x + 12.0);
+        }
+        if popup_pos.y + popup_h > canvas_rect.max.y - 12.0 {
+            popup_pos.y = (canvas_rect.max.y - popup_h - 12.0).max(canvas_rect.min.y + 12.0);
+        }
+
+        let area_id = egui::Id::new("quick_add_search_popup_area");
+        let area_response = egui::Area::new(area_id)
+            .order(egui::Order::Foreground)
+            .fixed_pos(popup_pos)
+            .show(ctx, |ui| {
+                let frame = egui::Frame::new()
+                    .fill(Color32::from_rgb(18, 16, 26))
+                    .corner_radius(CornerRadius::same(8))
+                    .stroke(Stroke::new(1.5, Theme::ACCENT_PINK.gamma_multiply(0.85)))
+                    .shadow(egui::Shadow {
+                        offset: [0, 6],
+                        blur: 16,
+                        spread: 0,
+                        color: Color32::from_black_alpha(190),
+                    })
+                    .inner_margin(egui::Margin::symmetric(10, 8));
+
+                frame.show(ui, |ui| {
+                    ui.set_width(popup_w - 20.0);
+
+                    // Header badge
+                    let badge_text = if search.source_endpoint.is_output {
+                        "CONNECT TO INPUT -> QUICK ADD"
+                    } else {
+                        "PROVIDE SIGNAL FROM -> QUICK ADD"
+                    };
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(badge_text)
+                                .font(Theme::font_bold(10.0))
+                                .color(Theme::ACCENT_PINK),
+                        );
+                    });
+                    ui.add_space(4.0);
+
+                    // Search input box
+                    let prev_query = search.search_query.clone();
+                    let text_edit = egui::TextEdit::singleline(&mut search.search_query)
+                        .hint_text("Search (e.g. AND, XOR, LED)...")
+                        .font(Theme::font_bold(12.0))
+                        .text_color(Theme::TEXT_PRIMARY)
+                        .desired_width(ui.available_width());
+
+                    let edit_output = ui.add(text_edit);
+                    if search.request_focus {
+                        edit_output.request_focus();
+                        search.request_focus = false;
+                    }
+
+                    // Reset selected index if query changed
+                    if search.search_query != prev_query {
+                        search.selected_index = 0;
+                    }
+
+                    // Global key navigation
+                    let enter_pressed = (edit_output.lost_focus() && ctx.input(|i| i.key_pressed(Key::Enter)))
+                        || ctx.input(|i| i.key_pressed(Key::Enter));
+                    let escape_pressed = ctx.input(|i| i.key_pressed(Key::Escape));
+                    let arrow_up = ctx.input(|i| i.key_pressed(Key::ArrowUp));
+                    let arrow_down = ctx.input(|i| i.key_pressed(Key::ArrowDown));
+                    let tab_pressed = ctx.input(|i| i.key_pressed(Key::Tab));
+
+                    if escape_pressed {
+                        close_menu = true;
+                    }
+
+                    if arrow_down || tab_pressed {
+                        if !filtered_kinds.is_empty() {
+                            search.selected_index = (search.selected_index + 1) % filtered_kinds.len();
+                        }
+                    }
+                    if arrow_up {
+                        if !filtered_kinds.is_empty() {
+                            if search.selected_index == 0 {
+                                search.selected_index = filtered_kinds.len().saturating_sub(1);
+                            } else {
+                                search.selected_index -= 1;
+                            }
+                        }
+                    }
+
+                    if enter_pressed && !filtered_kinds.is_empty() {
+                        chosen_kind = Some(filtered_kinds[search.selected_index].clone());
+                    }
+
+                    ui.add_space(6.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    // Candidate list in scroll area
+                    egui::ScrollArea::vertical()
+                        .max_height(190.0)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            if filtered_kinds.is_empty() {
+                                ui.add_space(16.0);
+                                ui.vertical_centered(|ui| {
+                                    ui.label(
+                                        egui::RichText::new("No matching components")
+                                            .font(Theme::font_regular(11.0))
+                                            .color(Theme::TEXT_MUTED),
+                                    );
+                                });
+                                ui.add_space(16.0);
+                            } else {
+                                for (i, kind) in filtered_kinds.iter().enumerate() {
+                                    let is_selected = i == search.selected_index;
+                                    let (rect, row_resp) = ui.allocate_exact_size(
+                                        Vec2::new(ui.available_width(), 26.0),
+                                        Sense::click(),
+                                    );
+
+                                    if row_resp.hovered() {
+                                        search.selected_index = i;
+                                    }
+
+                                    if row_resp.clicked() {
+                                        chosen_kind = Some(kind.clone());
+                                    }
+
+                                    if is_selected {
+                                        row_resp.scroll_to_me(Some(egui::Align::Center));
+                                    }
+
+                                    // Background
+                                    let bg = if is_selected {
+                                        Theme::ACCENT_PURPLE.gamma_multiply(0.4)
+                                    } else if row_resp.hovered() {
+                                        Theme::BG_PANEL_RAISED
+                                    } else {
+                                        Color32::TRANSPARENT
+                                    };
+                                    ui.painter().rect_filled(rect, CornerRadius::same(4), bg);
+
+                                    if is_selected {
+                                        // Left indicator bar
+                                        let ind_rect = Rect::from_min_size(
+                                            rect.min,
+                                            Vec2::new(3.0, rect.height()),
+                                        );
+                                        ui.painter().rect_filled(ind_rect, CornerRadius::same(2), Theme::ACCENT_PINK);
+                                    }
+
+                                    // Badge with short code
+                                    let code = kind.short_code();
+                                    let badge_rect = Rect::from_min_size(
+                                        Pos2::new(rect.min.x + 8.0, rect.min.y + 4.0),
+                                        Vec2::new(38.0, 18.0),
+                                    );
+                                    ui.painter().rect_filled(
+                                        badge_rect,
+                                        CornerRadius::same(3),
+                                        Theme::BG_CANVAS,
+                                    );
+                                    ui.painter().rect_stroke(
+                                        badge_rect,
+                                        CornerRadius::same(3),
+                                        Stroke::new(1.0, Theme::ACCENT_PURPLE.gamma_multiply(0.4)),
+                                        egui::StrokeKind::Outside,
+                                    );
+                                    ui.painter().text(
+                                        badge_rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        code,
+                                        Theme::font_bold(9.0),
+                                        Theme::ACCENT_PINK,
+                                    );
+
+                                    // Display name
+                                    let name_pos = Pos2::new(rect.min.x + 52.0, rect.center().y);
+                                    ui.painter().text(
+                                        name_pos,
+                                        egui::Align2::LEFT_CENTER,
+                                        kind.display_name(),
+                                        Theme::font_bold(11.0),
+                                        if is_selected { Color32::WHITE } else { Theme::TEXT_PRIMARY },
+                                    );
+
+                                    // Category on the right
+                                    let cat_pos = Pos2::new(rect.max.x - 6.0, rect.center().y);
+                                    ui.painter().text(
+                                        cat_pos,
+                                        egui::Align2::RIGHT_CENTER,
+                                        kind.category(),
+                                        Theme::font_regular(9.0),
+                                        Theme::TEXT_MUTED,
+                                    );
+
+                                    ui.add_space(2.0);
+                                }
+                            }
+                        });
+
+                    ui.add_space(4.0);
+                    ui.separator();
+                    ui.add_space(2.0);
+
+                    // Footer hint
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("Enter: Select  *  Esc: Cancel")
+                                .font(Theme::font_regular(9.5))
+                                .color(Theme::TEXT_MUTED),
+                        );
+                    });
+                });
+            });
+
+        // Check if user clicked outside the popup
+        if !just_opened
+            && ctx.input(|i| i.pointer.primary_clicked() || i.pointer.secondary_clicked())
+        {
+            if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                if !area_response.response.rect.contains(pos) {
+                    close_menu = true;
+                }
+            }
+        }
+
+        // Apply choice if any
+        if let Some(kind) = chosen_kind {
+            let id = circuit.add_component(kind, (0.0, 0.0));
+            let target_is_output = !search.source_endpoint.is_output;
+            let port_offset = if let Some(comp) = circuit.components.get(id) {
+                let wpos = comp.port_world_pos(target_is_output, 0);
+                (wpos.0, wpos.1)
+            } else {
+                (0.0, 0.0)
+            };
+
+            let desired_port_canvas = self.snap_point(search.drop_canvas_pos);
+            let comp_pos = Pos2::new(
+                desired_port_canvas.x - port_offset.0,
+                desired_port_canvas.y - port_offset.1,
+            );
+            let comp_pos_snapped = self.snap_point(comp_pos);
+            if let Some(comp) = circuit.components.get_mut(id) {
+                comp.pos = (comp_pos_snapped.x, comp_pos_snapped.y);
+            }
+
+            let target_endpoint = PortEndpoint {
+                component_id: id,
+                is_output: target_is_output,
+                port_index: 0,
+            };
+
+            let (src, sink) = if search.source_endpoint.is_output {
+                (search.source_endpoint, target_endpoint)
+            } else {
+                (target_endpoint, search.source_endpoint)
+            };
+
+            circuit.connect_ports(src, sink);
+            Simulator::settle(circuit);
+
+            self.selection.select_single(id);
+            meta.circuit_mutated = true;
+            meta.placed_component = true;
+            self.wire_drop_search = None;
+            return;
+        }
+
+        if close_menu {
+            self.wire_drop_search = None;
+        } else {
+            self.wire_drop_search = Some(search);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use logic_core::GateKind;
+
+    #[test]
+    fn test_wire_search_candidates_filtering() {
+        // Output wire looking for input component
+        let output_candidates = CanvasState::get_wire_search_candidates(true, &[]);
+        assert!(output_candidates.contains(&GateKind::And));
+        assert!(output_candidates.contains(&GateKind::Led));
+        assert!(!output_candidates.contains(&GateKind::ToggleSwitch));
+        assert!(!output_candidates.contains(&GateKind::Clock));
+
+        // Input wire looking for output/source component
+        let input_candidates = CanvasState::get_wire_search_candidates(false, &[]);
+        assert!(input_candidates.contains(&GateKind::ToggleSwitch));
+        assert!(input_candidates.contains(&GateKind::Clock));
+        assert!(input_candidates.contains(&GateKind::And));
+        assert!(!input_candidates.contains(&GateKind::Led));
+        assert!(!input_candidates.contains(&GateKind::SevenSegment));
+    }
+
+    #[test]
+    fn test_score_component_ranking() {
+        // "and" matches AND Gate with score 0 ahead of NAND Gate (score 3)
+        let and_score = CanvasState::score_component(&GateKind::And, "and").unwrap();
+        let nand_score = CanvasState::score_component(&GateKind::Nand, "and").unwrap();
+        assert_eq!(and_score, 0);
+        assert_eq!(nand_score, 3);
+        assert!(and_score < nand_score);
+
+        // "or" matches OR Gate with score 0 ahead of NOR Gate (score 3)
+        let or_score = CanvasState::score_component(&GateKind::Or, "or").unwrap();
+        let nor_score = CanvasState::score_component(&GateKind::Nor, "or").unwrap();
+        assert_eq!(or_score, 0);
+        assert_eq!(nor_score, 3);
+        assert!(or_score < nor_score);
+
+        // "xor" matches XOR Gate with score 0
+        let xor_score = CanvasState::score_component(&GateKind::Xor, "xor").unwrap();
+        assert_eq!(xor_score, 0);
+
+        // "xnor" matches XNOR Gate with score 0
+        let xnor_score = CanvasState::score_component(&GateKind::Xnor, "xnor").unwrap();
+        assert_eq!(xnor_score, 0);
+
+        // "not" matches NOT Gate with score 0
+        assert_eq!(CanvasState::score_component(&GateKind::Not, "not"), Some(0));
+
+        // "dff" matches D Flip-Flop with score 0
+        assert_eq!(CanvasState::score_component(&GateKind::DFlipFlop, "dff"), Some(0));
+
+        // "led" matches LED with score 0
+        assert_eq!(CanvasState::score_component(&GateKind::Led, "led"), Some(0));
+    }
+
+    #[test]
+    fn test_quick_add_auto_connection() {
+        let mut circuit = Circuit::new();
+        let sw_id = circuit.add_component(GateKind::ToggleSwitch, (100.0, 100.0));
+        let sw_out = PortEndpoint {
+            component_id: sw_id,
+            is_output: true,
+            port_index: 0,
+        };
+
+        // Simulate wire release in air
+        let mut canvas = CanvasState::default();
+        canvas.wire_drop_search = Some(WireDropSearchState {
+            source_endpoint: sw_out,
+            source_canvas_pos: Pos2::new(140.0, 100.0),
+            drop_canvas_pos: Pos2::new(300.0, 100.0),
+            search_query: "and".to_string(),
+            selected_index: 0,
+            request_focus: false,
+        });
+
+        assert!(canvas.wire_drop_search.is_some());
+
+        // Quick add AND Gate
+        let and_id = circuit.add_component(GateKind::And, (360.0, 120.0));
+        let and_in0 = PortEndpoint {
+            component_id: and_id,
+            is_output: false,
+            port_index: 0,
+        };
+        let net_id = circuit.connect_ports(sw_out, and_in0);
+        assert!(net_id.is_some());
+        Simulator::settle(&mut circuit);
+
+        let net = circuit.nets.get(net_id.unwrap()).unwrap();
+        assert_eq!(net.source, sw_out);
+        assert!(net.sinks.contains(&and_in0));
     }
 }
