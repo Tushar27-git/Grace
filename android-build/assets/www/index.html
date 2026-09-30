@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Logic Lab</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app-container">
+    <!-- Top Header -->
+    <header>
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <span>Logic Lab</span>
+      </div>
+
+      <div class="header-tools">
+        <button id="btn-tool-select" class="tool-btn active" title="Select & Move">👆 Select</button>
+        <button id="btn-tool-wire" class="tool-btn" title="Connect Wires">🔌 Wire</button>
+        <button id="btn-tool-pan" class="tool-btn" title="Pan Canvas">✋ Pan</button>
+        <button id="btn-truth-table" class="tool-btn" title="Truth Table">🔬 Table</button>
+        <button id="btn-universal-lab" class="tool-btn" title="Universal Gates">⚡ Lab</button>
+        <button id="btn-waveform" class="tool-btn" title="Digital Waveforms">📈 Wave</button>
+        <button id="btn-hdl-export" class="tool-btn" title="Verilog / VHDL">📄 HDL</button>
+        <button id="btn-presets" class="tool-btn" title="Preset Circuits">📂 Library</button>
+        <button id="btn-clear" class="tool-btn danger" title="Clear Canvas">🗑️ Clear</button>
+      </div>
+    </header>
+
+    <!-- Simulation Control Floating Bar -->
+    <div class="sim-bar">
+      <div id="clock-led" class="clock-indicator"></div>
+      <button id="btn-sim-play" class="tool-btn active">▶ Run</button>
+      <button id="btn-sim-step" class="tool-btn">⏭ Step</button>
+      <button id="btn-sim-freq" class="tool-btn">2 Hz</button>
+    </div>
+
+    <!-- Floating Zoom Controls -->
+    <div class="canvas-floating-controls">
+      <button id="btn-zoom-in" class="fab-btn" title="Zoom In">+</button>
+      <button id="btn-zoom-out" class="fab-btn" title="Zoom Out">−</button>
+      <button id="btn-zoom-reset" class="fab-btn" title="Reset View">⟲</button>
+      <button id="btn-grid-toggle" class="fab-btn" title="Toggle Grid">⊞</button>
+    </div>
+
+    <!-- Main Canvas Viewport -->
+    <div id="canvas-viewport">
+      <canvas id="circuit-canvas"></canvas>
+
+      <!-- Selection Action Floating Bar -->
+      <div id="selection-bar">
+        <button id="sel-rotate" class="action-pill-btn">🔄 Rotate</button>
+        <button id="sel-duplicate" class="action-pill-btn">📋 Copy</button>
+        <button id="sel-delete" class="action-pill-btn" style="color:#ff8c8c;">❌ Delete</button>
+        <button id="sel-close" class="action-pill-btn" style="color:#8E8798;">✕ Done</button>
+      </div>
+    </div>
+
+    <!-- Bottom Component Palette Drawer -->
+    <div id="bottom-palette">
+      <div class="palette-tabs">
+        <button class="palette-tab active" data-cat="gates">Gates</button>
+        <button class="palette-tab" data-cat="io">Input / Output</button>
+        <button class="palette-tab" data-cat="arithmetic">Arithmetic</button>
+        <button class="palette-tab" data-cat="sequential">Sequential</button>
+        <button class="palette-tab" data-cat="routing">Data / Routing</button>
+      </div>
+      <div id="palette-items" class="palette-items">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </div>
+
+    <!-- Truth Table Modal -->
+    <div id="modal-truth-table" class="modal-overlay">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3>🔬 Truth Table Generator</h3>
+          <button class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="color:var(--text-muted); margin-bottom:8px;">
+            Exhaustive state sweep of all connected inputs. Tap any row to drive that exact input combination to the live circuit.
+          </p>
+          <div id="truth-table-container"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-copy-csv" class="tool-btn">📋 Copy CSV</button>
+          <button class="tool-btn modal-close-action">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Universal Gates Lab Modal -->
+    <div id="modal-universal-lab" class="modal-overlay">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3>⚡ Universal Gates Laboratory</h3>
+          <button class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="color:var(--text-muted); margin-bottom:12px;">
+            Construct fundamental boolean functions using <strong>NAND-only</strong> or <strong>NOR-only</strong> configurations. Test your circuit design with 1-click verification!
+          </p>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="background:var(--bg-panel); border:1px solid rgba(110,76,158,0.3); padding:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>NOT from NAND</strong>
+                <div style="color:var(--text-muted); font-size:11px;">Tie both inputs together (A NAND A)</div>
+              </div>
+              <button class="tool-btn btn-load-challenge" data-challenge="not_nand">Load Scaffold</button>
+            </div>
+            <div style="background:var(--bg-panel); border:1px solid rgba(110,76,158,0.3); padding:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>AND from NAND</strong>
+                <div style="color:var(--text-muted); font-size:11px;">(A NAND B) followed by inverter</div>
+              </div>
+              <button class="tool-btn btn-load-challenge" data-challenge="and_nand">Load Scaffold</button>
+            </div>
+            <div style="background:var(--bg-panel); border:1px solid rgba(110,76,158,0.3); padding:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>OR from NAND</strong>
+                <div style="color:var(--text-muted); font-size:11px;">De Morgan: (~A) NAND (~B)</div>
+              </div>
+              <button class="tool-btn btn-load-challenge" data-challenge="or_nand">Load Scaffold</button>
+            </div>
+            <div style="background:var(--bg-panel); border:1px solid rgba(110,76,158,0.3); padding:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>XOR from 4 NANDs</strong>
+                <div style="color:var(--text-muted); font-size:11px;">Classic 4-gate minimal XOR network</div>
+              </div>
+              <button class="tool-btn btn-load-challenge" data-challenge="xor_nand">Load Scaffold</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-verify-challenge" class="tool-btn active">✓ Run Verification</button>
+          <button class="tool-btn modal-close-action">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Waveform Modal -->
+    <div id="modal-waveform" class="modal-overlay">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3>📈 Digital Timing Waveforms</h3>
+          <button class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="color:var(--text-muted); margin-bottom:8px;">
+            Logic analyzer observing active signal transitions over consecutive clock pulses.
+          </p>
+          <canvas id="waveform-canvas" width="460" height="200" style="width:100%; height:200px; background:#0e0b12; border:1px solid rgba(110,76,158,0.4); border-radius:4px;"></canvas>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-clear-wave" class="tool-btn">Clear Trace</button>
+          <button class="tool-btn modal-close-action">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HDL Export Modal -->
+    <div id="modal-hdl" class="modal-overlay">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3>📄 HDL Synthesis Export</h3>
+          <button class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="display:flex; gap:10px; margin-bottom:10px;">
+            <button id="btn-hdl-verilog" class="tool-btn active">Verilog 2001 (.v)</button>
+            <button id="btn-hdl-vhdl" class="tool-btn">VHDL 93 (.vhd)</button>
+          </div>
+          <textarea id="hdl-code-box" class="code-output" readonly></textarea>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-copy-hdl" class="tool-btn active">📋 Copy RTL Code</button>
+          <button class="tool-btn modal-close-action">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Presets & Library Modal -->
+    <div id="modal-presets" class="modal-overlay">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3>📂 Circuit Library & Presets</h3>
+          <button class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="color:var(--text-muted); margin-bottom:12px;">
+            Instant load curated textbook schematics or manage your saved projects:
+          </p>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <button class="tool-btn btn-load-preset" data-preset="full_adder" style="justify-content:flex-start; padding:10px;">
+              ➕ 1-Bit Full Adder (A, B, Cin → Sum, Cout)
+            </button>
+            <button class="tool-btn btn-load-preset" data-preset="sr_latch" style="justify-content:flex-start; padding:10px;">
+              💾 SR Latch Memory (Bistable NOR Feedback)
+            </button>
+            <button class="tool-btn btn-load-preset" data-preset="counter4" style="justify-content:flex-start; padding:10px;">
+              ⏱️ 4-Bit Synchronous Binary Counter + Display
+            </button>
+            <button class="tool-btn btn-load-preset" data-preset="mux2" style="justify-content:flex-start; padding:10px;">
+              🔀 2-to-1 Multiplexer Data Selector
+            </button>
+            <button class="tool-btn btn-load-preset" data-preset="oscillator" style="justify-content:flex-start; padding:10px;">
+              🔄 3-Stage Inverter Ring Oscillator
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="tool-btn modal-close-action">Close</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

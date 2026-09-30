@@ -26,6 +26,7 @@
 - [Installation & Getting Started](#installation--getting-started)
 - [Running Benchmarks & Tests](#running-benchmarks--tests)
 - [Circuit Serialization Format (.ron)](#circuit-serialization-format-ron)
+- [Android App & APK](#android-app--apk)
 - [Project Structure](#project-structure)
 - [License](#license)
 
@@ -497,6 +498,35 @@ Circuit(
     subcircuits: {},
 )
 ```
+
+---
+
+## Android App & APK
+
+Logic Lab is also packaged as an offline, hardware-accelerated **Android APK** designed for touchscreens:
+
+- **Touch-Optimized Canvas**: Smooth single-finger panning, two-finger pinch-to-zoom, touch-to-wire routing, and live toggle switches.
+- **Full Feature Parity**: Real-time event-driven 4-state simulation, Truth Table Generator with live row injection, Universal Gates Lab, Digital Waveforms, and Verilog/VHDL code generation.
+- **100% Offline & Native**: Bundled standalone inside a signed APK. No internet or external servers required.
+- **Universal Android Compatibility**: Supports Android 7.0 Nougat through Android 15/16 (API 24 to 36+).
+
+### Installing the APK on Android
+
+1. Download [`LogicLab.apk`](file:///d:/DLCD/LogicLab.apk) (also located at `dist/LogicLab.apk`) to your Android device or install via USB:
+   ```bash
+   adb install LogicLab.apk
+   ```
+2. Open the file on your device and tap **Install** (allow installation from this source if prompted).
+3. Tap the **Logic Lab** icon on your home screen to launch.
+
+### Rebuilding the Android APK
+
+To rebuild the APK from source using the automated Android toolchain:
+```bash
+cd android-build
+build_apk.bat
+```
+The compiled, signed, and zipaligned binary will be output to `dist/LogicLab.apk`.
 
 ---
 

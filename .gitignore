@@ -1,5 +1,7 @@
 /target
 /dist
+/tools
+android-build/build
 **/*.rs.bk
 *.bk
 *.log
