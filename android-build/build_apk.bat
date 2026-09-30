@@ -37,8 +37,8 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-echo [2/7] Linking resources, assets, and AndroidManifest...
-"%AAPT2%" link -I "%ANDROID_JAR%" -A assets --manifest AndroidManifest.xml build\compiled_res.zip -o build\app-unaligned.apk --java build\gen
+echo [2/7] Linking resources and AndroidManifest...
+"%AAPT2%" link -I "%ANDROID_JAR%" --manifest AndroidManifest.xml build\compiled_res.zip -o build\app-unaligned.apk --java build\gen
 if %errorlevel% neq 0 (
     echo Error: AAPT2 link failed.
     exit /b %errorlevel%
@@ -61,7 +61,7 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-echo [5/7] Adding classes.dex to APK...
+echo [5/7] Adding classes.dex and assets to APK...
 cd build\dex
 "%JAVA_HOME%\bin\jar.exe" -uf "..\app-unaligned.apk" classes.dex
 if %errorlevel% neq 0 (
@@ -70,6 +70,11 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 cd ..\..
+"%JAVA_HOME%\bin\jar.exe" -uf "build\app-unaligned.apk" assets
+if %errorlevel% neq 0 (
+    echo Error: jar failed to add assets.
+    exit /b %errorlevel%
+)
 
 echo [6/7] Running zipalign on APK...
 "%ZIPALIGN%" -f -p 4 build\app-unaligned.apk build\app-aligned.apk
